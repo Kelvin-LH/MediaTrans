@@ -1,15 +1,14 @@
-"""Main window for MediaTrans (PySide6, bilingual EN/中文)."""
+"""Main window for MediaTrans (PySide6, bilingual EN/中文, modern theme)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from PySide6.QtCore import QLocale, QSettings, Qt, QThread, QUrl, Signal
-from PySide6.QtGui import (QAction, QDesktopServices, QIcon, QLinearGradient,
-                           QPainter, QColor, QFont, QPixmap)
+from PySide6.QtGui import QColor, QDesktopServices, QIcon, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
-                               QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-                               QListWidget, QMainWindow, QMessageBox,
+                               QGridLayout, QGroupBox, QHBoxLayout, QLabel,
+                               QLineEdit, QListWidget, QMainWindow, QMessageBox,
                                QProgressBar, QPushButton, QRadioButton, QSlider,
                                QSplitter, QVBoxLayout, QWidget)
 
@@ -17,6 +16,125 @@ from . import __version__, APP_NAME, APP_REPO, converter
 from .i18n import LANG_NAMES, current_language, set_language, tr
 
 DROP_EXTS = converter.IMAGE_EXTS | converter.VIDEO_EXTS
+
+IMAGE_CODES = list(converter.IMAGE_FORMATS)   # JPEG, PNG, WEBP, AVIF, TIFF, BMP, PDF, GIF
+VIDEO_CODES = list(converter.VIDEO_FORMATS)   # MP4, MKV, WEBM, GIF, MP3
+
+FMT_KEY = {"JPEG": "fmt_jpg"}  # i18n key overrides for format codes
+
+QSS = """
+* { outline: none; }
+QMainWindow, QWidget { background: #eef1f6; color: #1f2430; font-size: 13px; }
+QLabel { background: transparent; }
+
+QGroupBox {
+    background: #ffffff;
+    border: 1px solid #e3e8f2;
+    border-radius: 12px;
+    margin-top: 16px;
+    padding: 16px 12px 12px 12px;
+    font-weight: 600;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 14px; top: 4px;
+    padding: 0 6px;
+    color: #6d5dfc;
+}
+
+QListWidget#fileList {
+    background: #fbfcff;
+    border: 2px dashed #c9d2e6;
+    border-radius: 12px;
+    padding: 8px;
+    font-size: 13px;
+}
+QListWidget#fileList::item { padding: 6px 8px; border-radius: 6px; }
+QListWidget#fileList::item:selected { background: #ece7ff; color: #1f2430; }
+QListWidget#fileList::item:hover:!selected { background: #f1f0fb; }
+
+QListWidget#logList {
+    background: #ffffff;
+    border: 1px solid #e3e8f2;
+    border-radius: 12px;
+    padding: 6px;
+    font-size: 12px;
+    color: #4b5563;
+}
+
+QPushButton {
+    background: #ffffff;
+    border: 1px solid #d5dbe8;
+    border-radius: 8px;
+    padding: 7px 16px;
+    font-weight: 500;
+}
+QPushButton:hover { border-color: #6d5dfc; color: #6d5dfc; }
+QPushButton:pressed { background: #f1eeff; }
+QPushButton:disabled { color: #9aa3b2; border-color: #e3e8f2; background: #f4f6fa; }
+
+QPushButton#convertBtn {
+    background: #6d5dfc; color: #ffffff; border: none;
+    font-weight: 600; padding: 8px 26px; font-size: 14px;
+}
+QPushButton#convertBtn:hover { background: #5b49f2; }
+QPushButton#convertBtn:disabled { background: #c7c2f5; color: #f4f3ff; }
+
+QProgressBar {
+    background: #e3e8f2; border: none; border-radius: 7px;
+    height: 14px; text-align: center; color: transparent; font-size: 10px;
+}
+QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6d5dfc, stop:1 #00b4d8); border-radius: 7px; }
+
+QSlider { min-height: 22px; }
+QSlider::groove:horizontal { height: 6px; background: #e3e8f2; border-radius: 3px; }
+QSlider::sub-page:horizontal { background: #b3a8ff; border-radius: 3px; }
+QSlider::handle:horizontal {
+    width: 16px; height: 16px; margin: -5px 0;
+    border-radius: 8px; background: #6d5dfc;
+}
+QSlider::handle:horizontal:hover { background: #5b49f2; }
+
+QComboBox {
+    background: #ffffff; border: 1px solid #d5dbe8;
+    border-radius: 8px; padding: 5px 30px 5px 10px;
+    min-height: 20px;
+}
+QComboBox:hover { border-color: #6d5dfc; }
+QComboBox::drop-down { border: none; width: 24px; }
+QComboBox QAbstractItemView {
+    background: #ffffff; border: 1px solid #d5dbe8;
+    selection-background-color: #ece7ff; selection-color: #1f2430;
+}
+
+QCheckBox, QRadioButton { spacing: 8px; background: transparent; }
+QCheckBox::indicator {
+    width: 17px; height: 17px;
+    border: 1px solid #c9d2e6; border-radius: 5px; background: #ffffff;
+}
+QCheckBox::indicator:hover { border-color: #6d5dfc; }
+QCheckBox::indicator:checked {
+    background: #6d5dfc; border-color: #6d5dfc;
+    image: url(:/qt-project.org/styles/commonstyle/images/standardbutton-apply-16.png);
+}
+QRadioButton::indicator {
+    width: 17px; height: 17px;
+    border: 1px solid #c9d2e6; border-radius: 9px; background: #ffffff;
+}
+QRadioButton::indicator:hover { border-color: #6d5dfc; }
+QRadioButton::indicator:checked {
+    border: 5px solid #6d5dfc; background: #ffffff; width: 7px; height: 7px;
+}
+
+QLineEdit {
+    background: #ffffff; border: 1px solid #d5dbe8;
+    border-radius: 8px; padding: 6px 10px;
+}
+QLineEdit:focus { border-color: #6d5dfc; }
+QLineEdit:disabled { background: #f4f6fa; color: #9aa3b2; }
+
+QSplitter::handle { background: transparent; width: 6px; }
+"""
 
 
 def app_icon() -> QIcon:
@@ -31,11 +149,12 @@ def app_icon() -> QIcon:
     p.setPen(Qt.NoPen)
     p.drawRoundedRect(8, 8, 112, 112, 28, 28)
     p.setPen(QColor("white"))
+    from PySide6.QtGui import QFont
     f = QFont()
     f.setPixelSize(58)
     f.setBold(True)
     p.setFont(f)
-    p.drawText(pm.rect(), Qt.AlignCenter, "M⇄")
+    p.drawText(pm.rect(), Qt.AlignCenter, "M")
     p.end()
     return QIcon(pm)
 
@@ -43,19 +162,32 @@ def app_icon() -> QIcon:
 class DropList(QListWidget):
     files_added = Signal(list)
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setSelectionMode(QListWidget.ExtendedSelection)
+        self.setObjectName("fileList")
+        self.setAlternatingRowColors(False)
+
     def _paths(self, event) -> list[str]:
         return [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
 
     def dragEnterEvent(self, event):
         if any(Path(p).suffix.lower() in DROP_EXTS for p in self._paths(event)):
+            self.setStyleSheet("QListWidget#fileList { border-color: #6d5dfc; background: #f3f0ff; }")
             event.acceptProposedAction()
         else:
             event.ignore()
+
+    def dragLeaveEvent(self, event):
+        self.setStyleSheet("")
+        super().dragLeaveEvent(event)
 
     def dragMoveEvent(self, event):
         event.acceptProposedAction()
 
     def dropEvent(self, event):
+        self.setStyleSheet("")
         paths = [p for p in self._paths(event) if Path(p).suffix.lower() in DROP_EXTS]
         if paths:
             self.files_added.emit(paths)
@@ -100,13 +232,13 @@ class MainWindow(QMainWindow):
 
         self._worker: ConvertWorker | None = None
         self._last_output: Path | None = None
-        self._about: QMessageBox | None = None
 
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
         self._build_ui()
         self.retranslate()
-        self.resize(900, 640)
+        self.resize(980, 780)
+        self.setMinimumSize(900, 760)
 
     # ---------- UI construction ----------
 
@@ -114,8 +246,10 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
+        root.setContentsMargins(16, 12, 16, 14)
+        root.setSpacing(10)
 
-        # -- top bar: language + help
+        # -- top bar: language + about
         top = QHBoxLayout()
         self.lang_label = QLabel()
         self.lang_combo = QComboBox()
@@ -133,10 +267,12 @@ class MainWindow(QMainWindow):
 
         # -- middle: file list | settings
         split = QSplitter(Qt.Horizontal)
+        split.setHandleWidth(10)
         root.addWidget(split, 1)
 
         left = QWidget()
         lv = QVBoxLayout(left)
+        lv.setContentsMargins(0, 0, 0, 0)
         self.list_label = QLabel()
         self.file_list = DropList()
         self.file_list.files_added.connect(self.add_files)
@@ -155,20 +291,31 @@ class MainWindow(QMainWindow):
 
         right = QWidget()
         rv = QVBoxLayout(right)
+        rv.setContentsMargins(0, 0, 0, 0)
 
         self.format_group = QGroupBox()
-        fv = QVBoxLayout(self.format_group)
-        self.rb_jpg = QRadioButton()
-        self.rb_jpg.setChecked(True)
-        self.rb_png = QRadioButton()
-        self.rb_webp = QRadioButton()
-        for rb in (self.rb_jpg, self.rb_png, self.rb_webp):
-            rb.toggled.connect(self._update_quality_enabled)
-            fv.addWidget(rb)
+        grid = QGridLayout(self.format_group)
+        grid.setVerticalSpacing(8)
+        self.image_label = QLabel()
+        self.image_combo = QComboBox()
+        for code in IMAGE_CODES:
+            self.image_combo.addItem(code, code)
+        self.image_combo.currentIndexChanged.connect(self._update_quality_enabled)
+        self.video_label = QLabel()
+        self.video_combo = QComboBox()
+        for code in VIDEO_CODES:
+            self.video_combo.addItem(code, code)
+        grid.addWidget(self.image_label, 0, 0)
+        grid.addWidget(self.image_combo, 0, 1)
+        grid.addWidget(self.video_label, 1, 0)
+        grid.addWidget(self.video_combo, 1, 1)
         self.video_note = QLabel()
         self.video_note.setWordWrap(True)
-        self.video_note.setMinimumHeight(40)
-        fv.addWidget(self.video_note)
+        sp = self.video_note.sizePolicy()
+        sp.setHeightForWidth(True)
+        self.video_note.setSizePolicy(sp)
+        self.video_note.setFixedHeight(48)
+        grid.addWidget(self.video_note, 2, 0, 1, 2)
 
         qrow = QHBoxLayout()
         self.quality_label = QLabel()
@@ -182,7 +329,7 @@ class MainWindow(QMainWindow):
         qrow.addWidget(self.quality_label)
         qrow.addWidget(self.quality_slider, 1)
         qrow.addWidget(self.quality_value)
-        fv.addLayout(qrow)
+        grid.addLayout(qrow, 3, 0, 1, 2)
         rv.addWidget(self.format_group)
 
         self.meta_group = QGroupBox()
@@ -215,11 +362,12 @@ class MainWindow(QMainWindow):
         rv.addWidget(self.out_group)
         rv.addStretch()
         split.addWidget(right)
-        split.setSizes([430, 440])
+        split.setSizes([420, 470])
 
         # -- bottom: actions + progress + log
         action_row = QHBoxLayout()
         self.convert_btn = QPushButton()
+        self.convert_btn.setObjectName("convertBtn")
         self.convert_btn.clicked.connect(self._start)
         self.cancel_btn = QPushButton()
         self.cancel_btn.setEnabled(False)
@@ -236,7 +384,10 @@ class MainWindow(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setValue(0)
         self.status = QLabel()
+        self.status.setStyleSheet("color: #6b7280;")
         self.log = QListWidget()
+        self.log.setObjectName("logList")
+        self.log.setMinimumHeight(70)
         root.addWidget(self.progress)
         root.addWidget(self.status)
         root.addWidget(self.log, 1)
@@ -261,9 +412,14 @@ class MainWindow(QMainWindow):
         self.add_btn.setText(tr("add_files"))
         self.clear_btn.setText(tr("clear"))
         self.format_group.setTitle(tr("group_format"))
-        self.rb_jpg.setText(tr("fmt_jpg"))
-        self.rb_png.setText(tr("fmt_png"))
-        self.rb_webp.setText(tr("fmt_webp"))
+        self.image_label.setText(tr("image_format"))
+        self.video_label.setText(tr("video_format"))
+        for i in range(self.image_combo.count()):
+            code = self.image_combo.itemData(i)
+            self.image_combo.setItemText(i, tr(FMT_KEY.get(code, "fmt_" + code.lower())))
+        for i in range(self.video_combo.count()):
+            code = self.video_combo.itemData(i)
+            self.video_combo.setItemText(i, tr("vfmt_" + code.lower()))
         self.video_note.setText(tr("video_note"))
         self.quality_label.setText(tr("quality"))
         self.meta_group.setTitle(tr("group_metadata"))
@@ -282,15 +438,11 @@ class MainWindow(QMainWindow):
     # ---------- helpers ----------
 
     def _selected_format(self) -> str:
-        if self.rb_png.isChecked():
-            return "PNG"
-        if self.rb_webp.isChecked():
-            return "WEBP"
-        return "JPEG"
+        return self.image_combo.currentData() or "JPEG"
 
     def _update_quality_enabled(self):
         fmt = self._selected_format()
-        self.quality_slider.setEnabled(fmt in ("JPEG", "WEBP"))
+        self.quality_slider.setEnabled(fmt in ("JPEG", "WEBP", "AVIF"))
 
     def _update_output_enabled(self):
         custom = self.out_custom.isChecked()
@@ -332,6 +484,7 @@ class MainWindow(QMainWindow):
 
         opts = converter.ConvertOptions(
             image_format=self._selected_format(),
+            video_format=self.video_combo.currentData() or "MP4",
             quality=self.quality_slider.value(),
             keep_metadata=self.meta_check.isChecked(),
         )
@@ -390,6 +543,8 @@ class MainWindow(QMainWindow):
 
 def run_app(argv: list[str] | None = None) -> int:
     app = QApplication(argv or [])
+    app.setStyle("Fusion")
+    app.setStyleSheet(QSS)
     window = MainWindow()
     window.show()
     return app.exec()

@@ -9,6 +9,7 @@
 ![License](https://img.shields.io/github/license/Kelvin-LH/MediaTrans)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+[![Build Release](https://github.com/Kelvin-LH/MediaTrans/actions/workflows/release.yml/badge.svg)](https://github.com/Kelvin-LH/MediaTrans/actions/workflows/release.yml)
 
 </div>
 
@@ -25,12 +26,12 @@ MediaTrans 是一款中英双语的桌面应用，可以把苹果专有的 **HEI
 
 ## ✨ 功能特性
 
-- 🖼 **图片**：`HEIC / HEIF / HIF → JPG / PNG / WebP`
-  - PNG 与 WebP（质量 100）输出为**像素级无损**（已验证与 HEIC 解码结果逐字节一致）
+- 🖼 **图片**：`HEIC / HEIF / HIF / AVIF / JPG / PNG / WebP / BMP / TIFF` → `JPG / PNG / WebP / AVIF / TIFF / BMP / PDF / GIF`
+  - PNG、WebP（质量100）、TIFF-LZW 与 BMP 输出为**像素级无损**
   - JPG 以最高实用质量保存（默认 95，≥90 时保留完整 4:4:4 色度）
-- 🎬 **视频**：`MOV / QT → MP4`
-  - 编码与 MP4 兼容时（H.264/HEVC + AAC，即 iPhone 常见内容）**无损流复制封装**
-  - 遇到 ProRes 等特殊编码时自动回退为高质量 H.264（CRF 18）转码
+- 🎬 **视频**：`MOV / QT / MP4 / M4V / AVI / MKV / WebM` → `MP4 / MKV / WebM / GIF / MP3`
+  - 编码与目标容器兼容时（H.264/HEVC + AAC，即 iPhone 常见内容）转 MP4 / MKV **无损流复制封装**
+  - 遇到 ProRes 等特殊编码自动回退高质量 H.264（CRF 18）；WebM 使用 VP9/Opus；MP3 仅提取音轨
 - 📍 **元数据保留**：EXIF（拍摄时间、ISO、曝光……）、**GPS 位置**、**设备信息**、XMP 与 ICC 色彩配置，只要目标格式支持就全部写入
 - 🌐 **原生双语界面**：内置中文与英文，随时切换，首次启动自动跟随系统语言
 - 🖱 **拖拽添加**、批量转换、进度条、逐文件日志、随时取消
@@ -39,8 +40,14 @@ MediaTrans 是一款中英双语的桌面应用，可以把苹果专有的 **HEI
 
 ## 🚀 快速开始
 
-**直接下载 Windows 免安装版**（无需 Python）：
-[MediaTrans-0.0.1-windows-x64.zip](https://github.com/Kelvin-LH/MediaTrans/releases/download/v0.0.1/MediaTrans-0.0.1-windows-x64.zip) · [全部版本](https://github.com/Kelvin-LH/MediaTrans/releases)
+**直接下载免安装版**（无需 Python），见
+[Releases 页面](https://github.com/Kelvin-LH/MediaTrans/releases) ——
+推送到 GitHub 的每个版本 tag 都会由 CI 自动产出
+Windows、macOS（Intel 与 Apple Silicon）、Linux 安装包。
+
+> 未配置代码签名证书（`WINDOWS_CERT_B64`、`MACOS_CERT_B64` secrets）时，
+> Release 产物为未签名状态，系统可能弹出 SmartScreen / Gatekeeper 提示，
+> 处理方式见 Release 说明。
 
 或从源码运行：
 
@@ -62,11 +69,14 @@ pyinstaller --noconfirm --windowed --name MediaTrans --collect-all pillow_heif r
 
 | 输入 | 输出 | 方式 | 是否无损 |
 |---|---|---|---|
-| HEIC / HEIF / HIF | PNG | 像素级精确重编码 | ✅ 无损 |
-| HEIC / HEIF / HIF | WebP | 质量 100 时使用无损模式 | ✅ 无损 |
-| HEIC / HEIF / HIF | JPG | 高质量编码（q95、4:4:4） | ⚠️ JPG 格式下的最佳质量 |
-| MOV / QT | MP4 | 流复制（`-c copy`） | ✅ 编码兼容时完全无损 |
-| MOV / QT | MP4 | H.264 CRF 18 + AAC 转码 | ⚠️ ProRes 等场景的回退方案 |
+| HEIC / HEIF / HIF / AVIF | PNG / BMP / TIFF-LZW | 像素级精确重编码 | ✅ 无损 |
+| HEIC / HEIF / HIF / AVIF | WebP | 质量 100 时使用无损模式 | ✅ 无损 |
+| HEIC / HEIF / HIF / AVIF | JPG | 高质量编码（q95、4:4:4） | ⚠️ JPG 格式下的最佳质量 |
+| 各类支持图片 | PDF / GIF | 文档 / 256 色输出 | ⚠️ 内容保留 |
+| MOV / QT / MP4 / AVI / MKV | MP4 | 流复制（`-c copy`） | ✅ 编码兼容时完全无损 |
+| MOV / QT / MP4 / AVI / MKV | MP4 | H.264 CRF 18 + AAC 转码 | ⚠️ ProRes 等场景的回退方案 |
+| MOV / QT / MP4 / AVI / MKV | MKV | 流复制 | ✅ Matroska 兼容一切编码 |
+| MOV / QT / MP4 / AVI / MKV | WebM / GIF / MP3 | VP9+Opus / 动图 / 仅音轨 | ⚠️ 重编码 |
 
 元数据处理：EXIF（含 GPS IFD 与设备字段）、XMP 和 ICC 配置会从源文件读出，
 在目标容器支持的情况下原样写入。EXIF 方向信息会被烘焙进像素，即使查看器忽略

@@ -20,6 +20,7 @@ from app import converter
 
 PASS = 0
 FAIL = 0
+SKIP = 0
 
 
 def check(name: str, cond: bool, detail: str = ""):
@@ -30,6 +31,12 @@ def check(name: str, cond: bool, detail: str = ""):
     else:
         FAIL += 1
         print(f"  FAIL  {name}  {detail}")
+
+
+def skip(name: str, detail: str = ""):
+    global SKIP
+    SKIP += 1
+    print(f"  SKIP  {name}  {detail}")
 
 
 def make_test_heic(dst: Path):
@@ -58,9 +65,11 @@ def make_test_heic(dst: Path):
 def exif_dict(path: Path) -> dict:
     with Image.open(path) as im:
         exif = im.getexif()
-        d = {k: v for k, v in exif.items()}
-        d.update({f"exififd:{k}": v for k, v in exif.get_ifd(IFD.Exif).items()})
-        d.update({f"gps:{k}": v for k, v in exif.get_ifd(IFD.GPSInfo).items()})
+        d = {int(k): v for k, v in exif.items()}
+        d.update({f"exififd:{int(k)}": v
+                  for k, v in exif.get_ifd(IFD.Exif).items()})
+        d.update({f"gps:{int(k)}": v
+                  for k, v in exif.get_ifd(IFD.GPSInfo).items()})
         d["_icc"] = bool(im.info.get("icc_profile"))
     return d
 
@@ -70,27 +79,51 @@ def test_images(tmp: Path):
     src = tmp / "IMG_0001.heic"
     make_test_heic(src)
 
-    opts = converter.ConvertOptions()
-    for fmt in ("JPEG", "PNG", "WEBP"):
-        opts.image_format = fmt
+    with_meta = ("JPEG", "PNG", "WEBP", "TIFF", "AVIF")
+    no_meta = ("BMP", "PDF", "GIF")
+    for fmt in with_meta + no_meta:
+        opts = converter.ConvertOptions(image_format=fmt)
         res = converter.convert_image(src, tmp / "out", opts)
+        if not res.ok and fmt == "AVIF" and "avif" in res.message.lower():
+            skip(f"{fmt}: no AVIF encoder in this Pillow build", res.message)
+            continue
         check(f"{fmt}: converted", res.ok, res.message)
         if not res.ok:
             continue
+        if fmt == "PDF":
+            check(f"{fmt}: non-empty output", res.output.stat().st_size > 0)
+            continue
         meta = exif_dict(res.output)
-        check(f"{fmt}: Make preserved", meta.get(Base.Make) == "Apple", str(meta))
-        check(f"{fmt}: Model preserved", meta.get(Base.Model) == "iPhone 15 Pro")
-        check(f"{fmt}: DateTimeOriginal preserved",
-              meta.get(f"exififd:{int(Base.DateTimeOriginal)}") == "2026:09:13 12:00:00")
-        lat = meta.get(f"gps:{int(GPS.GPSLatitude)}")
-        check(f"{fmt}: GPS latitude preserved",
-              lat is not None and
-              tuple(float(x) for x in lat) == (39.0, 54.0, 30.0), str(lat))
+        if fmt in with_meta:
+            check(f"{fmt}: Make preserved", meta.get(int(Base.Make)) == "Apple")
+            check(f"{fmt}: Model preserved",
+                  meta.get(int(Base.Model)) == "iPhone 15 Pro")
+            check(f"{fmt}: DateTimeOriginal preserved",
+                  meta.get(f"exififd:{int(Base.DateTimeOriginal)}")
+                  == "2026:09:13 12:00:00")
+            lat = meta.get(f"gps:{int(GPS.GPSLatitude)}")
+            check(f"{fmt}: GPS latitude preserved",
+                  lat is not None and
+                  tuple(float(x) for x in lat) == (39.0, 54.0, 30.0), str(lat))
+        else:
+            check(f"{fmt}: no metadata expected",
+                  not meta.get(int(Base.Make)))
 
     # lossless round-trip sanity: PNG output must match decoded HEIC pixels
     with Image.open(src) as a, Image.open(tmp / "out" / "IMG_0001.png") as b:
         check("PNG: pixels identical to decoded HEIC",
               a.convert("RGB").tobytes() == b.convert("RGB").tobytes())
+
+    # cross-format input: PNG file -> JPG keeps its EXIF too
+    png_src = tmp / "IMG_0003.png"
+    with Image.open(src) as im:
+        im.save(png_src, exif=Image.open(src).info.get("exif"))
+    opts = converter.ConvertOptions(image_format="JPEG")
+    res = converter.convert_image(png_src, tmp / "out", opts)
+    check("PNG→JPG: converted", res.ok, res.message)
+    if res.ok:
+        meta = exif_dict(res.output)
+        check("PNG→JPG: Make preserved", meta.get(int(Base.Make)) == "Apple")
 
 
 def make_test_mov(dst: Path):
@@ -105,24 +138,48 @@ def make_test_mov(dst: Path):
         check=True, capture_output=True, creationflags=converter._NO_WINDOW)
 
 
+def probe(dst: Path) -> str:
+    ff = converter._ffmpeg_exe()
+    probe = subprocess.run([ff, "-i", str(dst)], capture_output=True,
+                           text=True, creationflags=converter._NO_WINDOW)
+    return probe.stderr
+
+
 def test_video(tmp: Path):
     print("== video conversion ==")
     src = tmp / "VID_0002.mov"
     make_test_mov(src)
-    opts = converter.ConvertOptions()
-    res = converter.convert_video(src, tmp / "out", opts)
+
+    res = converter.convert_video(src, tmp / "out",
+                                  converter.ConvertOptions(video_format="MP4"))
     check("MOV→MP4: converted", res.ok, res.message)
-    if not res.ok:
-        return
-    check("MOV→MP4: lossless remux", res.message == "lossless remux", res.message)
-    ff = converter._ffmpeg_exe()
-    probe = subprocess.run([ff, "-i", str(res.output)], capture_output=True,
-                           text=True, creationflags=converter._NO_WINDOW)
-    err = probe.stderr
-    check("MP4: h264 video stream", "Video: h264" in err, err[:200])
-    check("MP4: aac audio stream", "Audio: aac" in err, err[:200])
-    check("MP4: creation_time metadata preserved",
-          "2026-09-13" in err, err[:200])
+    if res.ok:
+        check("MOV→MP4: lossless remux", res.message == "lossless remux")
+        err = probe(res.output)
+        check("MP4: h264 video stream", "Video: h264" in err, err[:200])
+        check("MP4: aac audio stream", "Audio: aac" in err, err[:200])
+        check("MP4: creation_time metadata preserved", "2026-09-13" in err)
+
+    res = converter.convert_video(src, tmp / "out",
+                                  converter.ConvertOptions(video_format="MKV"))
+    check("MOV→MKV: converted", res.ok, res.message)
+    if res.ok:
+        check("MOV→MKV: lossless remux", res.message == "lossless remux")
+
+    res = converter.convert_video(src, tmp / "out",
+                                  converter.ConvertOptions(video_format="GIF"))
+    check("MOV→GIF: converted", res.ok, res.message)
+
+    res = converter.convert_video(src, tmp / "out",
+                                  converter.ConvertOptions(video_format="MP3"))
+    check("MOV→MP3: converted", res.ok, res.message)
+
+    res = converter.convert_video(src, tmp / "out",
+                                  converter.ConvertOptions(video_format="WEBM"))
+    if not res.ok and "libvpx" in res.message.lower():
+        skip("MOV→WebM: encoder not in bundled ffmpeg", res.message)
+    else:
+        check("MOV→WebM: converted", res.ok, res.message)
 
 
 def test_strip_metadata(tmp: Path):
@@ -133,7 +190,7 @@ def test_strip_metadata(tmp: Path):
     check("strip: converted", res.ok, res.message)
     if res.ok:
         meta = exif_dict(res.output)
-        check("strip: Make removed", not meta.get(Base.Make))
+        check("strip: Make removed", not meta.get(int(Base.Make)))
 
 
 def main():
@@ -142,7 +199,7 @@ def main():
         test_images(tmp)
         test_video(tmp)
         test_strip_metadata(tmp)
-    print(f"\n{PASS} passed, {FAIL} failed")
+    print(f"\n{PASS} passed, {FAIL} failed, {SKIP} skipped")
     sys.exit(1 if FAIL else 0)
 
 

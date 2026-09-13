@@ -8,3 +8,4 @@ venv/
 .idea/
 .vscode/
 *.spec
+MediaTrans-*.zip
