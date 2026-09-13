@@ -63,7 +63,7 @@ def main():
     for lang in ("en", "zh"):
         set_language(lang)
         win = MainWindow(language=lang)
-        win.resize(980, 780)
+        win.resize(1000, 960)
         for s in SAMPLES:
             win.file_list.addItem(s)
         win.retranslate()

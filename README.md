@@ -37,6 +37,8 @@ color profile.
 - 🌐 **Native bilingual UI**: English and 简体中文 built in, switchable at any time, auto-detected on first launch
 - 🖱 **Drag & drop**, batch conversion with progress bar, per-file log, cancel anytime
 - 📁 Output next to the source or to any custom folder; name conflicts are auto-suffixed
+- ⚡ **Parallel & GPU**: batch jobs run in parallel scaled to your CPU cores; when a re-encode is needed, hardware encoders (NVIDIA NVENC / Intel QSV / AMD AMF / macOS VideoToolbox) are detected and used automatically, with a safe software fallback
+- 📜 **Logging**: every conversion is logged to `%LOCALAPPDATA%/MediaTrans/logs/mediatrans.log` (Linux/macOS: `~/Library/Logs` / `~/.mediatrans`); failures include the full ffmpeg output — open it via “View Log” in the app
 - 🧩 No external tools to install — the bundled static `ffmpeg` ships via pip
 
 ## 🚀 Getting started

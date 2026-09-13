@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import os
 import subprocess
+import textwrap
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -47,6 +49,29 @@ EXT_FOR_VIDEO_FORMAT = {"MP4": ".mp4", "MKV": ".mkv", "WEBM": ".webm",
 
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
+_MAX_LOG_BYTES = 5 * 1024 * 1024
+
+
+def log_file() -> Path:
+    """Persistent log location: %LOCALAPPDATA%/MediaTrans/logs or ~/.mediatrans/logs."""
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home())
+    d = Path(base) / "MediaTrans" / "logs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "mediatrans.log"
+
+
+def app_log(message: str) -> None:
+    """Append a line to the persistent log (kept under ~5 MB)."""
+    try:
+        lf = log_file()
+        if lf.exists() and lf.stat().st_size > _MAX_LOG_BYTES:
+            lf.replace(lf.with_suffix(".old.log"))
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(lf, "a", encoding="utf-8") as f:
+            f.write(f"[{stamp}] {message}\n")
+    except OSError:
+        pass  # logging must never break conversion
+
 
 @dataclass
 class ConvertOptions:
@@ -54,6 +79,8 @@ class ConvertOptions:
     video_format: str = "MP4"           # MP4 | MKV | WEBM | GIF | MP3
     quality: int = 95                   # for JPEG / WebP / AVIF
     keep_metadata: bool = True
+    parallel: bool = True               # fan out across CPU cores
+    use_gpu: bool = True                # prefer hardware video encoders
 
 
 @dataclass
@@ -61,6 +88,52 @@ class ConvertResult:
     ok: bool
     output: Optional[Path] = None
     message: str = ""
+
+
+def cpu_workers() -> int:
+    """Sensible parallelism based on the machine: all cores minus one,
+    always at least 2 (video work is subprocess-bound, images release the
+    GIL during encode), capped at 8 to bound memory use."""
+    return max(2, min(8, (os.cpu_count() or 4) - 1))
+
+
+_GPU_PRIORITY = ("h264_nvenc",      # NVIDIA
+                 "h264_qsv",        # Intel Quick Sync
+                 "h264_amf",        # AMD
+                 "h264_videotoolbox")  # macOS
+_GPU_ENCODER_CACHE: Optional[str] = None
+
+
+def gpu_encoder() -> Optional[str]:
+    """Return the best hardware H.264 encoder this ffmpeg build offers,
+    or None if only software encoders are available."""
+    global _GPU_ENCODER_CACHE
+    if _GPU_ENCODER_CACHE is not None:
+        return _GPU_ENCODER_CACHE if _GPU_ENCODER_CACHE != "" else None
+    enc = ""
+    try:
+        r = _run([_ffmpeg_exe(), "-hide_banner", "-encoders"])
+        enc = r.stdout or ""
+    except Exception:  # noqa: BLE001
+        _GPU_ENCODER_CACHE = ""
+        return None
+    for name in _GPU_PRIORITY:
+        if name in enc:
+            _GPU_ENCODER_CACHE = name
+            return name
+    _GPU_ENCODER_CACHE = ""
+    return None
+
+
+def _h264_gpu_args(encoder: str) -> list[str]:
+    if encoder == "h264_nvenc":
+        return ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "19"]
+    if encoder == "h264_qsv":
+        return ["-c:v", "h264_qsv", "-global_quality", "20"]
+    if encoder == "h264_amf":
+        return ["-c:v", "h264_amf", "-quality", "quality",
+                "-rc", "vbr_peak", "-b:v", "8M"]
+    return ["-c:v", "h264_videotoolbox", "-b:v", "6M"]
 
 
 def unique_path(path: Path) -> Path:
@@ -205,10 +278,13 @@ def convert_image(src: Path, dst_dir: Path, opts: ConvertOptions) -> ConvertResu
             # PNG needs no extra kwargs: always lossless
 
             _save_with_xmp(im, dst, fmt, xmp=xmp, **kwargs)
+        app_log(f"OK image [{fmt}]: {src} -> {dst}")
         return ConvertResult(True, dst, "converted")
     except Exception as exc:  # noqa: BLE001 — report any decode/save error per-file
         if dst.exists():
             dst.unlink(missing_ok=True)
+        app_log(f"FAILED image -> {fmt}: {src}\n"
+                f"  {type(exc).__name__}: {exc}")
         return ConvertResult(False, message=f"{type(exc).__name__}: {exc}")
 
 
@@ -221,6 +297,20 @@ def _ok_file(dst: Path) -> bool:
     return dst.exists() and dst.stat().st_size > 0
 
 
+def _video_result(src: Path, dst: Path, vfmt: str,
+                  r: subprocess.CompletedProcess) -> ConvertResult:
+    """Shared success/failure handling + full diagnostics to the log file."""
+    if r.returncode == 0 and _ok_file(dst):
+        return ConvertResult(True, dst, "converted")
+    dst.unlink(missing_ok=True)
+    stderr = (r.stderr or "").strip()
+    app_log(f"FAILED video -> {vfmt}: {src}\n"
+            f"  exit code: {r.returncode}\n"
+            f"  ffmpeg stderr:\n{textwrap.indent(stderr, '    ')}")
+    lines = stderr.splitlines() or ["ffmpeg failed"]
+    return ConvertResult(False, message=lines[-1][:300] + "  (details in log)")
+
+
 def convert_video(src: Path, dst_dir: Path, opts: ConvertOptions) -> ConvertResult:
     vfmt = opts.video_format.upper()
     if vfmt not in VIDEO_FORMATS:
@@ -228,6 +318,7 @@ def convert_video(src: Path, dst_dir: Path, opts: ConvertOptions) -> ConvertResu
     try:
         _ffmpeg_exe()
     except Exception as exc:  # noqa: BLE001
+        app_log(f"FAILED video: {src} — ffmpeg not available: {exc}")
         return ConvertResult(False, message=f"ffmpeg not available: {exc}")
 
     dst_dir.mkdir(parents=True, exist_ok=True)
@@ -235,49 +326,77 @@ def convert_video(src: Path, dst_dir: Path, opts: ConvertOptions) -> ConvertResu
     meta = ["-map_metadata", "0"] if opts.keep_metadata else []
     streams = ["-map", "0:v:0", "-map", "0:a?"]
 
+    def success(detail: str) -> ConvertResult:
+        app_log(f"OK video [{detail}]: {src} -> {dst}")
+        return ConvertResult(True, dst, detail)
+
     if vfmt == "MP4":
         # 1) lossless attempt: stream copy (H.264/HEVC video + AAC audio)
         r = _ffmpeg_convert(src, dst,
                             [*meta, *streams, "-c", "copy",
                              "-movflags", "+faststart"])
         if r.returncode == 0 and _ok_file(dst):
-            return ConvertResult(True, dst, "lossless remux")
-        # 2) fallback: high-quality re-encode (ProRes, PCM audio, ...)
+            return success("lossless remux")
+        # 2) fallback: re-encode — hardware encoder first, then software x264
         dst.unlink(missing_ok=True)
+        if opts.use_gpu:
+            gpu = gpu_encoder()
+            if gpu:
+                r = _ffmpeg_convert(src, dst,
+                                    [*meta, *streams, *_h264_gpu_args(gpu),
+                                     "-pix_fmt", "yuv420p",
+                                     "-c:a", "aac", "-b:a", "192k",
+                                     "-movflags", "+faststart"])
+                if r.returncode == 0 and _ok_file(dst):
+                    return success(f"re-encoded ({gpu})")
+                dst.unlink(missing_ok=True)
+                app_log(f"GPU encoder {gpu} failed for {src}; "
+                        f"falling back to software x264")
         r = _ffmpeg_convert(src, dst,
                             [*meta, *streams,
                              "-c:v", "libx264", "-preset", "medium", "-crf", "18",
                              "-pix_fmt", "yuv420p",
                              "-c:a", "aac", "-b:a", "192k",
                              "-movflags", "+faststart"])
-        detail = "re-encoded (H.264/AAC)"
-    elif vfmt == "MKV":
+        res = _video_result(src, dst, "MP4", r)
+        if res.ok:
+            res.message = "re-encoded (H.264/AAC)"
+            app_log(f"OK video [re-encoded (H.264/AAC)]: {src} -> {dst}")
+        return res
+
+    if vfmt == "MKV":
         # Matroska accepts virtually every codec → plain remux is lossless
         r = _ffmpeg_convert(src, dst,
                             [*meta, *streams, "-map", "0:s?", "-c", "copy"])
-        detail = "lossless remux"
-    elif vfmt == "WEBM":
+        if r.returncode == 0 and _ok_file(dst):
+            return success("lossless remux")
+        return _video_result(src, dst, "MKV", r)
+
+    if vfmt == "WEBM":
         r = _ffmpeg_convert(src, dst,
                             [*meta, "-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0",
                              "-row-mt", "1", "-c:a", "libopus", "-b:a", "128k"])
-        detail = "re-encoded (VP9/Opus)"
-    elif vfmt == "GIF":
+        res = _video_result(src, dst, "WEBM", r)
+        if res.ok:
+            res.message = "re-encoded (VP9/Opus)"
+        return res
+
+    if vfmt == "GIF":
         r = _ffmpeg_convert(src, dst,
                             ["-vf", "fps=12,scale=480:-1:flags=lanczos,"
                                     "split[a][b];[a]palettegen[p];[b][p]paletteuse",
                              "-loop", "0"])
-        detail = "animated GIF (12 fps, 480px)"
-    else:  # MP3 — extract the audio track
-        r = _ffmpeg_convert(src, dst,
-                            ["-vn", *meta, "-c:a", "libmp3lame", "-q:a", "2"])
-        detail = "audio extracted (MP3)"
+        res = _video_result(src, dst, "GIF", r)
+        if res.ok:
+            res.message = "animated GIF (12 fps, 480px)"
+        return res
 
-    if r.returncode == 0 and _ok_file(dst):
-        return ConvertResult(True, dst, detail)
-
-    dst.unlink(missing_ok=True)
-    lines = (r.stderr or "ffmpeg failed").strip().splitlines()
-    return ConvertResult(False, message=lines[-1][:300] if lines else "ffmpeg failed")
+    # MP3 — extract the audio track
+    r = _ffmpeg_convert(src, dst, ["-vn", *meta, "-c:a", "libmp3lame", "-q:a", "2"])
+    res = _video_result(src, dst, "MP3", r)
+    if res.ok:
+        res.message = "audio extracted (MP3)"
+    return res
 
 
 def convert_file(src: Path, dst_dir: Path, opts: ConvertOptions) -> ConvertResult:

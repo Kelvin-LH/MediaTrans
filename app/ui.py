@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from PySide6.QtCore import QLocale, QSettings, Qt, QThread, QUrl, Signal
+from PySide6.QtCore import QLocale, QMutex, QMutexLocker, QSettings, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QIcon, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                                QGridLayout, QGroupBox, QHBoxLayout, QLabel,
@@ -195,7 +196,7 @@ class DropList(QListWidget):
 
 
 class ConvertWorker(QThread):
-    progress = Signal(int, int, str)          # index(0-based), total, filename
+    progress = Signal(int, int, str)          # started(1-based), total, filename
     file_done = Signal(str, str, bool, str)   # filename, output, ok, detail
     all_done = Signal(int, int, bool)         # ok, fail, cancelled
 
@@ -204,23 +205,40 @@ class ConvertWorker(QThread):
         self._jobs = jobs
         self._opts = opts
         self._cancelled = False
+        self._total = len(jobs)
+        self._started = 0
+        self._ok = 0
+        self._fail = 0
+        self._lock = QMutex()
 
     def cancel(self):
         self._cancelled = True
 
     def run(self):
-        ok = fail = 0
-        total = len(self._jobs)
-        for i, (src, dst_dir) in enumerate(self._jobs):
-            if self._cancelled:
-                break
-            self.progress.emit(i, total, src.name)
-            result = converter.convert_file(src, dst_dir, self._opts)
-            out = str(result.output) if result.output else ""
-            self.file_done.emit(src.name, out, result.ok, result.message)
-            ok += result.ok
-            fail += not result.ok
-        self.all_done.emit(ok, fail, self._cancelled)
+        if self._opts.parallel and self._total > 1:
+            workers = min(self._total, converter.cpu_workers())
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                futures = [ex.submit(self._convert_one, src, d)
+                           for src, d in self._jobs]
+                for f in as_completed(futures):
+                    f.result()
+        else:
+            for src, d in self._jobs:
+                self._convert_one(src, d)
+        self.all_done.emit(self._ok, self._fail, self._cancelled)
+
+    def _convert_one(self, src: Path, dst_dir: Path):
+        if self._cancelled:
+            return
+        with QMutexLocker(self._lock):
+            self._started += 1
+            self.progress.emit(self._started, self._total, src.name)
+        result = converter.convert_file(src, dst_dir, self._opts)
+        out = str(result.output) if result.output else ""
+        with QMutexLocker(self._lock):
+            self._ok += result.ok
+            self._fail += not result.ok
+        self.file_done.emit(src.name, out, result.ok, result.message)
 
 
 class MainWindow(QMainWindow):
@@ -237,8 +255,8 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(app_icon())
         self._build_ui()
         self.retranslate()
-        self.resize(980, 780)
-        self.setMinimumSize(900, 760)
+        self.resize(1000, 960)
+        self.setMinimumSize(900, 920)
 
     # ---------- UI construction ----------
 
@@ -260,6 +278,9 @@ class MainWindow(QMainWindow):
         top.addWidget(self.lang_label)
         top.addWidget(self.lang_combo)
         top.addStretch()
+        self.log_file_btn = QPushButton()
+        self.log_file_btn.clicked.connect(self._open_log)
+        top.addWidget(self.log_file_btn)
         self.about_btn = QPushButton()
         self.about_btn.clicked.connect(self._show_about)
         top.addWidget(self.about_btn)
@@ -342,6 +363,23 @@ class MainWindow(QMainWindow):
         mv.addWidget(self.meta_note)
         rv.addWidget(self.meta_group)
 
+        self.perf_group = QGroupBox()
+        pv = QVBoxLayout(self.perf_group)
+        self.parallel_check = QCheckBox()
+        self.parallel_check.setChecked(True)
+        self.gpu_check = QCheckBox()
+        self.gpu_check.setChecked(True)
+        self.gpu_note = QLabel()
+        self.gpu_note.setWordWrap(True)
+        self._gpu_encoder = converter.gpu_encoder()
+        if not self._gpu_encoder:
+            self.gpu_check.setChecked(False)
+            self.gpu_check.setEnabled(False)
+        pv.addWidget(self.parallel_check)
+        pv.addWidget(self.gpu_check)
+        pv.addWidget(self.gpu_note)
+        rv.addWidget(self.perf_group)
+
         self.out_group = QGroupBox()
         ov = QVBoxLayout(self.out_group)
         self.out_same = QRadioButton()
@@ -407,6 +445,7 @@ class MainWindow(QMainWindow):
     def retranslate(self):
         self.setWindowTitle(tr("window_title"))
         self.lang_label.setText(tr("language") + ":")
+        self.log_file_btn.setText(tr("view_log"))
         self.about_btn.setText(tr("menu_about"))
         self.list_label.setText(tr("list_header", n=self.file_list.count()))
         self.add_btn.setText(tr("add_files"))
@@ -425,6 +464,13 @@ class MainWindow(QMainWindow):
         self.meta_group.setTitle(tr("group_metadata"))
         self.meta_check.setText(tr("keep_metadata"))
         self.meta_note.setText(tr("metadata_note"))
+        self.perf_group.setTitle(tr("group_performance"))
+        self.parallel_check.setText(tr("parallel_tip"))
+        self.gpu_check.setText(tr("gpu_tip"))
+        if self._gpu_encoder:
+            self.gpu_note.setText(tr("gpu_found", name=self._gpu_encoder))
+        else:
+            self.gpu_note.setText(tr("gpu_none"))
         self.out_group.setTitle(tr("group_output"))
         self.out_same.setText(tr("out_same"))
         self.out_custom.setText(tr("out_custom"))
@@ -487,6 +533,8 @@ class MainWindow(QMainWindow):
             video_format=self.video_combo.currentData() or "MP4",
             quality=self.quality_slider.value(),
             keep_metadata=self.meta_check.isChecked(),
+            parallel=self.parallel_check.isChecked(),
+            use_gpu=self.gpu_check.isChecked(),
         )
         if not converter.ffmpeg_available():
             has_video = any(converter.detect_kind(s) == "video" for s, _ in jobs)
@@ -506,7 +554,7 @@ class MainWindow(QMainWindow):
         self._worker.start()
 
     def _on_progress(self, i: int, total: int, name: str):
-        self.status.setText(tr("status_converting", i=i + 1, n=total, name=name))
+        self.status.setText(tr("status_converting", i=i, n=total, name=name))
 
     def _on_file_done(self, name: str, out: str, ok: bool, detail: str):
         if ok:
@@ -534,6 +582,13 @@ class MainWindow(QMainWindow):
     def _open_output(self):
         if self._last_output:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._last_output)))
+
+    def _open_log(self):
+        lf = converter.log_file()
+        if lf.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(lf)))
+        else:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(lf.parent)))
 
     def _show_about(self):
         QMessageBox.about(

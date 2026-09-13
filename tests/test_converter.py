@@ -182,6 +182,46 @@ def test_video(tmp: Path):
         check("MOV→WebM: converted", res.ok, res.message)
 
 
+def test_parallel_and_gpu(tmp: Path):
+    print("== parallel & GPU ==")
+    check("cpu_workers() sane",
+          2 <= converter.cpu_workers() <= 8, str(converter.cpu_workers()))
+    enc = converter.gpu_encoder()
+    print(f"  (info) gpu encoder: {enc or 'none'}")
+
+    src = tmp / "IMG_0001.heic"
+    make_test_heic(src)
+
+    # thread-safety: many concurrent image conversions on one engine
+    from concurrent.futures import ThreadPoolExecutor
+    opts = converter.ConvertOptions(image_format="JPEG")
+    with ThreadPoolExecutor(max_workers=converter.cpu_workers()) as ex:
+        futs = [ex.submit(converter.convert_image, src, tmp / f"par{i}", opts)
+                for i in range(converter.cpu_workers() * 2)]
+        results = [f.result() for f in futs]
+    check(f"parallel: {len(results)} concurrent conversions all OK",
+          all(r.ok for r in results),
+          "; ".join(r.message for r in results if not r.ok))
+
+    # GPU re-encode path: ProRes MOV cannot be stream-copied into MP4
+    ff = converter._ffmpeg_exe()
+    prores = tmp / "VID_prores.mov"
+    gen = subprocess.run(
+        [ff, "-y", "-f", "lavfi", "-i", "testsrc=duration=0.5:size=160x120:rate=15",
+         "-c:v", "prores_ks", "-profile:v", "0", str(prores)],
+        capture_output=True, creationflags=converter._NO_WINDOW)
+    if gen.returncode != 0 or not prores.exists():
+        skip("GPU/re-encode: prores encoder unavailable in bundled ffmpeg")
+        return
+    vopts = converter.ConvertOptions(video_format="MP4", use_gpu=True)
+    res = converter.convert_video(prores, tmp / "out_v", vopts)
+    check("ProRes→MP4: converted (GPU or software fallback)", res.ok, res.message)
+    if res.ok:
+        check("ProRes→MP4: re-encoded", "re-encoded" in res.message, res.message)
+        err = probe(res.output)
+        check("ProRes→MP4: playable h264 output", "Video: h264" in err, err[:200])
+
+
 def test_strip_metadata(tmp: Path):
     print("== metadata stripping ==")
     src = tmp / "IMG_0001.heic"
@@ -198,6 +238,7 @@ def main():
         tmp = Path(d)
         test_images(tmp)
         test_video(tmp)
+        test_parallel_and_gpu(tmp)
         test_strip_metadata(tmp)
     print(f"\n{PASS} passed, {FAIL} failed, {SKIP} skipped")
     sys.exit(1 if FAIL else 0)
