@@ -52,6 +52,7 @@ jobs:
 
       - name: Build (Windows / Linux)
         if: runner.os != 'macOS'
+        shell: bash
         run: |
           python -m PyInstaller --noconfirm --windowed --name MediaTrans \
             --icon MediaTrans.ico \
