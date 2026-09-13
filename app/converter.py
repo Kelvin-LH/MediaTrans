@@ -324,7 +324,10 @@ def convert_video(src: Path, dst_dir: Path, opts: ConvertOptions) -> ConvertResu
     dst_dir.mkdir(parents=True, exist_ok=True)
     dst = unique_path(dst_dir / (src.stem + EXT_FOR_VIDEO_FORMAT[vfmt]))
     meta = ["-map_metadata", "0"] if opts.keep_metadata else []
-    streams = ["-map", "0:v:0", "-map", "0:a?"]
+    # Map only the primary audio stream: newer iPhones record an extra
+    # Apple "apac" (spatial audio) track ffmpeg can't decode, and mapping it
+    # makes every output fail with "Error opening output files".
+    streams = ["-map", "0:v:0", "-map", "0:a:0?"]
 
     def success(detail: str) -> ConvertResult:
         app_log(f"OK video [{detail}]: {src} -> {dst}")
