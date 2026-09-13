@@ -40,6 +40,11 @@ color profile.
 
 ## 🚀 Getting started
 
+**Download the prebuilt Windows app** (no Python needed):
+[MediaTrans-0.0.1-windows-x64.zip](https://github.com/Kelvin-LH/MediaTrans/releases/download/v0.0.1/MediaTrans-0.0.1-windows-x64.zip) · [All releases](https://github.com/Kelvin-LH/MediaTrans/releases)
+
+Or run from source:
+
 ```bash
 pip install -r requirements.txt
 python run.py

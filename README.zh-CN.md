@@ -39,6 +39,11 @@ MediaTrans 是一款中英双语的桌面应用，可以把苹果专有的 **HEI
 
 ## 🚀 快速开始
 
+**直接下载 Windows 免安装版**（无需 Python）：
+[MediaTrans-0.0.1-windows-x64.zip](https://github.com/Kelvin-LH/MediaTrans/releases/download/v0.0.1/MediaTrans-0.0.1-windows-x64.zip) · [全部版本](https://github.com/Kelvin-LH/MediaTrans/releases)
+
+或从源码运行：
+
 ```bash
 pip install -r requirements.txt
 python run.py
