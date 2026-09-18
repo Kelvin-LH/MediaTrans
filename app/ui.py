@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QLocale, QSettings, Qt, QThread, QUrl, Signal
+from PySide6.QtCore import QEvent, QLocale, QSettings, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import (
     QColor,
     QDesktopServices,
@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFileDialog,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -42,6 +43,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QSplitter,
@@ -53,6 +55,23 @@ from . import APP_NAME, APP_REPO, __version__, converter
 from .i18n import LANG_NAMES, current_language, set_language, tr
 
 DROP_EXTS = converter.ALL_EXTS
+
+# Layout metrics in device-independent pixels. The window is capped to the
+# screen at runtime, so these are preferences rather than requirements.
+PREFERRED_SIZE = (1280, 980)
+MINIMUM_SIZE = (780, 460)
+# below this settings-viewport width the two columns stop fitting
+COMPACT_BREAKPOINT = 660
+
+
+def _scaled_font(base: QFont, factor: float) -> QFont:
+    """A copy of `base` scaled by `factor`, honouring both pt and px fonts."""
+    font = QFont(base)
+    if font.pointSizeF() > 0:
+        font.setPointSizeF(max(6.5, font.pointSizeF() * factor))
+    elif font.pixelSize() > 0:
+        font.setPixelSize(max(8, round(font.pixelSize() * factor)))
+    return font
 
 IMAGE_CODES = list(converter.IMAGE_FORMATS)
 VIDEO_CODES = list(converter.VIDEO_FORMATS)
@@ -93,7 +112,7 @@ def theme_qss(dark: bool) -> str:
     }
     return f"""
 * {{ outline: none; }}
-QMainWindow, QWidget {{ background: {p['bg']}; color: {p['text']}; font-size: 13px; }}
+QMainWindow, QWidget {{ background: {p['bg']}; color: {p['text']}; }}
 QLabel {{ background: transparent; }}
 
 QGroupBox {{
@@ -125,7 +144,6 @@ QListWidget#logList {{
     border: 1px solid {p['border']};
     border-radius: 12px;
     padding: 6px;
-    font-size: 12px;
     color: {p['log_text']};
 }}
 
@@ -142,7 +160,7 @@ QPushButton:disabled {{ color: {p['disabled']}; border-color: {p['border']}; bac
 
 QPushButton#convertBtn {{
     background: {p['accent']}; color: #ffffff; border: none;
-    font-weight: 600; padding: 8px 26px; font-size: 14px;
+    font-weight: 600; padding: 8px 24px;
 }}
 QPushButton#convertBtn:hover {{ background: {p['accent_hover']}; }}
 QPushButton#convertBtn:disabled {{ background: {p['accent_soft']}; color: {p['disabled']}; }}
@@ -208,7 +226,7 @@ QSplitter::handle {{ background: transparent; width: 6px; }}
 QPlainTextEdit {{
     background: {p['field']}; color: {p['text']};
     border: 1px solid {p['field_border']}; border-radius: 8px; padding: 6px;
-    font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px;
+    font-family: Consolas, "Cascadia Mono", monospace;
 }}
 """
 
@@ -280,7 +298,14 @@ class ErrorDialog(QDialog):
     def __init__(self, parent, title: str, body: str):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.resize(680, 420)
+        screen = parent.screen() if parent else QApplication.primaryScreen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            self.resize(min(680, int(avail.width() * 0.85)),
+                        min(420, int(avail.height() * 0.7)))
+        else:
+            self.resize(680, 420)
+        self.setMinimumWidth(320)
         lay = QVBoxLayout(self)
         box = QPlainTextEdit(body)
         box.setReadOnly(True)
@@ -360,11 +385,189 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
         self._build_ui()
+        self._apply_fonts()
         self._load_settings()
         self.retranslate()
         self._apply_theme()
-        self.resize(1280, 980)
-        self.setMinimumSize(1060, 700)
+        self._apply_initial_geometry()
+
+    # ------------------------------------------------- geometry & scaling --
+
+    def _apply_initial_geometry(self) -> None:
+        """Size, clamp and centre the window for the screen it opens on.
+
+        Screen sizes and DPI scale factors vary wildly (a 1366x768 laptop at
+        100% versus a 4K display at 200%), so the preferred size is capped to
+        what is actually available, the minimum size stays small enough for a
+        laptop with the taskbar showing, and a size restored from a previous
+        session is re-clamped in case the display changed.
+        """
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:                      # headless / offscreen
+            self.resize(*PREFERRED_SIZE)
+            return
+        avail = screen.availableGeometry()
+
+        self.setMinimumSize(
+            min(MINIMUM_SIZE[0], int(avail.width() * 0.9)),
+            min(MINIMUM_SIZE[1], int(avail.height() * 0.9)),
+        )
+
+        restored = self._settings.value("geometry")
+        if restored is not None and self.restoreGeometry(restored):
+            width, height = self.width(), self.height()
+            # the display may be smaller than when the size was stored
+            width = max(self.minimumWidth(), min(width, int(avail.width() * 0.96)))
+            height = max(self.minimumHeight(), min(height, int(avail.height() * 0.96)))
+            if (width, height) != (self.width(), self.height()):
+                self.resize(width, height)
+            if not avail.contains(self.frameGeometry()):
+                self.move(avail.x() + max(0, (avail.width() - width) // 2),
+                          avail.y() + max(0, (avail.height() - height) // 2))
+            self._splitter.setSizes([int(width * 0.34), int(width * 0.66)])
+            return
+
+        width = max(self.minimumWidth(),
+                    min(PREFERRED_SIZE[0], int(avail.width() * 0.96)))
+        height = max(self.minimumHeight(),
+                     min(PREFERRED_SIZE[1], int(avail.height() * 0.96)))
+        self.resize(width, height)
+        self.move(avail.x() + max(0, (avail.width() - width) // 2),
+                  avail.y() + max(0, (avail.height() - height) // 2))
+        self._splitter.setSizes([int(width * 0.34), int(width * 0.66)])
+
+    def _apply_fonts(self) -> None:
+        """Derive small sizes from the default font instead of hard-coding px,
+        so 125% / 150% / 200% DPI and custom system fonts never clip text."""
+        base = QApplication.font()
+        self.log.setFont(_scaled_font(base, 0.94))
+        fm = self.fontMetrics()
+        # two lines of wrapped hint text, and a queue/log that can shrink
+        self.video_note.setMinimumHeight(fm.lineSpacing() * 2 + 6)
+        self.meta_note.setMinimumHeight(fm.lineSpacing() * 2)
+        self.gpu_note.setMinimumHeight(fm.lineSpacing() * 2)
+        self.file_list.setMinimumHeight(fm.lineSpacing() * 4)
+        self.log.setMinimumHeight(fm.lineSpacing() * 4)
+
+    def eventFilter(self, watched, event):
+        # The settings viewport is the authoritative width for the breakpoint:
+        # it is correct even while the window itself is still resizing.
+        if watched is self.settings_scroll.viewport() and event.type() == QEvent.Resize:
+            self._relayout_settings(compact=self._should_compact(event.size().width()))
+        return super().eventFilter(watched, event)
+
+    @staticmethod
+    def _should_compact(viewport_width: int) -> bool:
+        """Hysteresis stops the panel flip-flopping at the breakpoint when
+        switching columns adds or removes the vertical scrollbar."""
+        if viewport_width < COMPACT_BREAKPOINT:
+            return True
+        if viewport_width > COMPACT_BREAKPOINT + 60:
+            return False
+        return False
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._relayout_settings(
+            compact=self._should_compact(self.settings_scroll.viewport().width()))
+        self._relayout_top(compact=self._content_width() < self._top_bar_width_needed())
+        self._relayout_queue(
+            compact=self.file_list.width() < self._queue_buttons_width_needed())
+
+    # --------------------------------------------------- adaptive sections --
+
+    # a little slack so a row is never laid out exactly at its natural width
+    LAYOUT_SAFETY = 8
+
+    def _content_width(self) -> int:
+        """Width actually available to rows inside the central widget."""
+        central = self.centralWidget()
+        if central is None:
+            return self.width()
+        margins = self._root_margins
+        return central.width() - margins.left() - margins.right()
+
+    def _widgets_total_width(self, *widgets: QWidget) -> int:
+        """Natural width of a row: widget hints, spacing and a little slack."""
+        return (sum(w.sizeHint().width() for w in widgets)
+                + 8 * max(0, len(widgets) - 1) + self.LAYOUT_SAFETY)
+
+    def _top_bar_width_needed(self) -> int:
+        """Natural width of the single-row top bar for the current language,
+        font and DPI — so the fold happens exactly when it has to."""
+        return self._widgets_total_width(
+            self.lang_label, self.lang_combo, self.theme_btn,
+            self.log_file_btn, self.about_btn)
+
+    def _queue_buttons_width_needed(self) -> int:
+        return self._widgets_total_width(
+            self.add_btn, self.add_dir_btn, self.remove_btn, self.clear_btn)
+
+    def _relayout_top(self, compact: bool) -> None:
+        """One row when it fits, language on top and actions below when not."""
+        if compact == self._top_compact:
+            return
+        self._top_compact = compact
+        widgets = (self.lang_label, self.lang_combo, self.theme_btn,
+                   self.log_file_btn, self.about_btn)
+        for row in (self._top_row1, self._top_row2):
+            for widget in widgets:
+                row.removeWidget(widget)
+        for widget in (self.lang_label, self.lang_combo, self.theme_btn):
+            self._top_row1.addWidget(widget)
+        self._top_row1.addStretch()
+        if compact:
+            self._top_row2.addStretch()
+        for widget in (self.log_file_btn, self.about_btn):
+            (self._top_row2 if compact else self._top_row1).addWidget(widget)
+
+    def _relayout_queue(self, compact: bool) -> None:
+        """Four buttons in a row, or a 2x2 grid when the queue is narrow."""
+        if compact == self._queue_compact:
+            return
+        self._queue_compact = compact
+        buttons = (self.add_btn, self.add_dir_btn, self.remove_btn, self.clear_btn)
+        grid = self._queue_btns
+        for button in buttons:
+            grid.removeWidget(button)
+        if compact:
+            grid.addWidget(self.add_btn, 0, 0)
+            grid.addWidget(self.add_dir_btn, 0, 1)
+            grid.addWidget(self.remove_btn, 1, 0)
+            grid.addWidget(self.clear_btn, 1, 1)
+            grid.setColumnStretch(2, 1)
+        else:
+            for column, button in enumerate(buttons):
+                grid.addWidget(button, 0, column)
+            grid.setColumnStretch(len(buttons), 1)
+
+    def _relayout_settings(self, compact: bool) -> None:
+        """Two settings columns when there is room, stacked when there is not."""
+        if compact == self._compact_layout:
+            return
+        self._compact_layout = compact
+        grid = self._settings_grid
+        groups = (self.preset_group, self.format_group, self.meta_group,
+                  self.perf_group, self.out_group)
+        for widget in groups:
+            grid.removeWidget(widget)
+        for row in range(len(groups) + 2):   # clear stale stretch from the other mode
+            grid.setRowStretch(row, 0)
+        if compact:
+            for row, widget in enumerate(groups):
+                grid.addWidget(widget, row, 0)
+            grid.setColumnStretch(0, 1)
+            grid.setColumnStretch(1, 0)
+            grid.setRowStretch(len(groups), 1)
+        else:
+            grid.addWidget(self.preset_group, 0, 0)
+            grid.addWidget(self.format_group, 1, 0)
+            grid.addWidget(self.meta_group, 0, 1)
+            grid.addWidget(self.perf_group, 1, 1)
+            grid.addWidget(self.out_group, 2, 1)
+            grid.setColumnStretch(0, 1)
+            grid.setColumnStretch(1, 1)
+            grid.setRowStretch(3, 1)
 
     # ------------------------------------------------------- UI construction --
 
@@ -374,8 +577,16 @@ class MainWindow(QMainWindow):
         root = QVBoxLayout(central)
         root.setContentsMargins(16, 12, 16, 14)
         root.setSpacing(10)
+        self._root_margins = root.contentsMargins()
 
-        top = QHBoxLayout()
+        # The top bar folds onto a second row when the language and buttons no
+        # longer fit side by side (narrow window or large fonts).
+        self._top_rows = QVBoxLayout()
+        self._top_rows.setSpacing(6)
+        self._top_row1 = QHBoxLayout()
+        self._top_row2 = QHBoxLayout()
+        self._top_rows.addLayout(self._top_row1)
+        self._top_rows.addLayout(self._top_row2)
         self.lang_label = QLabel()
         self.lang_combo = QComboBox()
         for code, name in LANG_NAMES.items():
@@ -388,13 +599,9 @@ class MainWindow(QMainWindow):
         self.log_file_btn.clicked.connect(self._open_log)
         self.about_btn = QPushButton()
         self.about_btn.clicked.connect(self._show_about)
-        top.addWidget(self.lang_label)
-        top.addWidget(self.lang_combo)
-        top.addWidget(self.theme_btn)
-        top.addStretch()
-        top.addWidget(self.log_file_btn)
-        top.addWidget(self.about_btn)
-        root.addLayout(top)
+        self._top_compact: bool | None = None
+        self._relayout_top(compact=False)
+        root.addLayout(self._top_rows)
 
         split = QSplitter(Qt.Horizontal)
         split.setHandleWidth(10)
@@ -409,7 +616,8 @@ class MainWindow(QMainWindow):
         self.file_list.files_added.connect(self.add_paths)
         self.file_list.itemDoubleClicked.connect(self._show_file_info)
         self.file_list.setToolTip(tr("tooltip_list"))
-        btns = QHBoxLayout()
+        self._queue_btns = QGridLayout()
+        self._queue_btns.setSpacing(6)
         self.add_btn = QPushButton()
         self.add_btn.clicked.connect(self._pick_files)
         self.add_dir_btn = QPushButton()
@@ -418,28 +626,25 @@ class MainWindow(QMainWindow):
         self.remove_btn.clicked.connect(self._remove_selected)
         self.clear_btn = QPushButton()
         self.clear_btn.clicked.connect(self._clear)
-        for b in (self.add_btn, self.add_dir_btn, self.remove_btn, self.clear_btn):
-            btns.addWidget(b)
-        btns.addStretch()
+        self._queue_compact: bool | None = None
+        self._relayout_queue(compact=False)
         lv.addWidget(self.list_label)
         lv.addWidget(self.file_list, 1)
-        lv.addLayout(btns)
+        lv.addLayout(self._queue_btns)
         split.addWidget(left)
 
-        # ---- right: settings in a scroll area, arranged in two columns
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # ---- right: settings in a scroll area; the arrangement adapts to the
+        # available width (two columns when there is room, one when narrow)
+        self.settings_scroll = QScrollArea()
+        self.settings_scroll.setWidgetResizable(True)
+        self.settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.settings_scroll.setFrameShape(QFrame.NoFrame)
         panel = QWidget()
-        columns = QHBoxLayout(panel)
-        columns.setContentsMargins(0, 0, 6, 0)
-        columns.setSpacing(12)
-        col_a = QVBoxLayout()
-        col_b = QVBoxLayout()
-        col_a.setSpacing(8)
-        col_b.setSpacing(8)
-        columns.addLayout(col_a, 1)
-        columns.addLayout(col_b, 1)
+        self._settings_grid = QGridLayout(panel)
+        self._settings_grid.setContentsMargins(0, 0, 6, 0)
+        self._settings_grid.setHorizontalSpacing(12)
+        self._settings_grid.setVerticalSpacing(8)
+        self._compact_layout: bool | None = None
 
         self.preset_group = QGroupBox()
         pg = QVBoxLayout(self.preset_group)
@@ -448,7 +653,7 @@ class MainWindow(QMainWindow):
             self.preset_combo.addItem(code, code)
         self.preset_combo.currentIndexChanged.connect(self._apply_preset)
         pg.addWidget(self.preset_combo)
-        col_a.addWidget(self.preset_group)
+        # placed by _relayout_settings()
 
         self.format_group = QGroupBox()
         grid = QGridLayout(self.format_group)
@@ -458,6 +663,11 @@ class MainWindow(QMainWindow):
         for code in IMAGE_CODES:
             self.image_combo.addItem(code, code)
         self.image_combo.currentIndexChanged.connect(self._on_manual_change)
+        for _combo in (self.image_combo,):
+            _combo.setSizeAdjustPolicy(
+                QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            _combo.setMinimumContentsLength(10)
+            _combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.video_label = QLabel()
         self.video_combo = QComboBox()
         for code in VIDEO_CODES:
@@ -476,7 +686,6 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.audio_combo, 2, 1)
         self.video_note = QLabel()
         self.video_note.setWordWrap(True)
-        self.video_note.setFixedHeight(30)
         grid.addWidget(self.video_note, 3, 0, 1, 2)
 
         qrow = QHBoxLayout()
@@ -506,7 +715,7 @@ class MainWindow(QMainWindow):
         rrow.addWidget(self.resize_spin)
         rrow.addStretch()
         grid.addLayout(rrow, 5, 0, 1, 2)
-        col_a.addWidget(self.format_group)
+
 
         self.meta_group = QGroupBox()
         mv = QVBoxLayout(self.meta_group)
@@ -520,7 +729,7 @@ class MainWindow(QMainWindow):
         for w in (self.meta_check, self.timestamps_check, self.date_check,
                   self.meta_note):
             mv.addWidget(w)
-        col_b.addWidget(self.meta_group)
+
 
         self.perf_group = QGroupBox()
         pv = QVBoxLayout(self.perf_group)
@@ -536,7 +745,7 @@ class MainWindow(QMainWindow):
             self.gpu_check.setEnabled(False)
         for w in (self.parallel_check, self.gpu_check, self.gpu_note):
             pv.addWidget(w)
-        col_b.addWidget(self.perf_group)
+
 
         self.out_group = QGroupBox()
         ov = QVBoxLayout(self.out_group)
@@ -563,12 +772,11 @@ class MainWindow(QMainWindow):
         ov.addWidget(self.out_custom)
         ov.addLayout(orow)
         ov.addLayout(crow)
-        col_b.addWidget(self.out_group)
-        col_a.addStretch()
-        col_b.addStretch()
-        scroll.setWidget(panel)
-        split.addWidget(scroll)
-        split.setSizes([410, 850])
+        self.settings_scroll.setWidget(panel)
+        self.settings_scroll.viewport().installEventFilter(self)
+        split.addWidget(self.settings_scroll)
+        self._splitter = split
+        self._relayout_settings(compact=False)
 
         # ---- bottom
         action_row = QHBoxLayout()
@@ -592,7 +800,6 @@ class MainWindow(QMainWindow):
         self.status = QLabel()
         self.log = QListWidget()
         self.log.setObjectName("logList")
-        self.log.setMinimumHeight(90)
         self.log.setToolTip(tr("tooltip_log"))
         self.log.itemDoubleClicked.connect(self._show_log_detail)
         root.addWidget(self.progress)
@@ -734,6 +941,7 @@ class MainWindow(QMainWindow):
         s.setValue("gpu", self.gpu_check.isChecked())
         s.setValue("output_dir", self.out_path.text() if self.out_custom.isChecked()
                    else "")
+        s.setValue("geometry", self.saveGeometry())
 
     def closeEvent(self, event):
         self._save_settings()

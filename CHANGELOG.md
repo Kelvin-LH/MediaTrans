@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-09-13
+
+### Added
+- **Adaptive interface.** The settings panel switches between two columns and a
+  single column, the top bar folds onto a second row, and the queue buttons
+  become a 2x2 grid — each decision is made from the space actually available
+  (widget size hints, language and font scale), so the window renders correctly
+  from 780x460 up to 2560x1440.
+- The window is sized to fit the screen it opens on, centred, and clamped when
+  the stored size no longer fits; window size and position are remembered
+  between sessions and re-clamped if the display changes.
+- Sizes are derived from font metrics rather than hard-coded pixels, so custom
+  system fonts and 100%–200% DPI scaling no longer clip text.
+- `tests/test_layout.py`: 12 automated checks over 8 window sizes, 4 font
+  scales, 2 languages and 2 themes, plus a CI run at 150% DPI.
+
+### Changed
+- Removed hard-coded pixel font sizes from the stylesheet; the system font and
+  DPI settings are honoured.
+- Format combo boxes no longer demand the width of their longest entry, which
+  previously forced the settings panel wider than the window.
+
+### Fixed
+- Settings cards were stretched beyond their content height when the panel
+  layout changed between compact and wide arrangements.
+
 ## [0.3.0] — 2026-09-13
 
 ### Added
@@ -78,7 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bilingual (English / 简体中文) desktop UI, drag & drop, batch progress.
 - First Windows build published on GitHub Releases.
 
-[Unreleased]: https://github.com/Kelvin-LH/MediaTrans/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Kelvin-LH/MediaTrans/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Kelvin-LH/MediaTrans/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Kelvin-LH/MediaTrans/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Kelvin-LH/MediaTrans/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Kelvin-LH/MediaTrans/compare/v0.0.1...v0.2.0

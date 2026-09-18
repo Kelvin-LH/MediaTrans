@@ -54,6 +54,8 @@ scriptable command line tool.
 - 🕒 **Timestamp preservation** — outputs inherit the source file dates
 - 📊 **Live summary** — size before/after, savings %, throughput, per-file deltas
 - 🌐 **Bilingual UI** with **dark mode**, remembered between sessions
+- 🖥 **Adaptive interface** — reflows from 780x460 up to 4K and renders cleanly
+  at any DPI scale (100%–200%); window size and position are remembered
 - 📜 **Diagnostics** — every conversion is logged with full tool output; one
   click opens the log, double-clicking a failure shows the raw error
 - ⚡ **Parallel and GPU-accelerated** — jobs fan out across CPU cores, and
@@ -182,6 +184,9 @@ WAV/FLAC, and MP4/MKV remuxing.
 - **Multi-image HEIC** (bursts) exports the primary image.
 - Resizing disables the MP4/MKV remux fast path, since scaling requires a
   re-encode.
+- **Display requirements:** the window needs about 780x460 logical pixels. On
+  smaller screens it still opens within the available area and every panel
+  scrolls, but the interface becomes cramped.
 
 ## ❓ FAQ
 

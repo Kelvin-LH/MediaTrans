@@ -69,6 +69,15 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python tests/test_worker.py
+      - name: Adaptive layout test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tests/test_layout.py
+      - name: Adaptive layout test at 150% DPI
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_SCALE_FACTOR: "1.5"
+        run: python tests/test_layout.py
       - name: Build every window variant without a display
         env:
           QT_QPA_PLATFORM: offscreen
