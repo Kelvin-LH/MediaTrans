@@ -9,3 +9,4 @@ venv/
 .vscode/
 *.spec
 MediaTrans-*.zip
+*.log
