@@ -6,6 +6,7 @@ MediaTrans engine, and verifies the metadata survived in every output.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -19,6 +20,11 @@ from PIL import Image
 from PIL.ExifTags import GPS, IFD, Base
 
 from app import converter
+
+# legacy Windows code pages cannot print every message verbatim
+for _stream in (sys.stdout, sys.stderr):
+    with contextlib.suppress(AttributeError, ValueError, OSError):
+        _stream.reconfigure(errors="replace")
 
 PASS = 0
 FAIL = 0
@@ -122,10 +128,10 @@ def test_images(tmp: Path):
         im.save(png_src, exif=Image.open(src).info.get("exif"))
     opts = converter.ConvertOptions(image_format="JPEG")
     res = converter.convert_image(png_src, tmp / "out", opts)
-    check("PNG→JPG: converted", res.ok, res.message)
+    check("PNG->JPG: converted", res.ok, res.message)
     if res.ok:
         meta = exif_dict(res.output)
-        check("PNG→JPG: Make preserved", meta.get(int(Base.Make)) == "Apple")
+        check("PNG->JPG: Make preserved", meta.get(int(Base.Make)) == "Apple")
 
 
 def make_test_mov(dst: Path):
@@ -154,9 +160,9 @@ def test_video(tmp: Path):
 
     res = converter.convert_video(src, tmp / "out",
                                   converter.ConvertOptions(video_format="MP4"))
-    check("MOV→MP4: converted", res.ok, res.message)
+    check("MOV->MP4: converted", res.ok, res.message)
     if res.ok:
-        check("MOV→MP4: lossless remux", res.message == "lossless remux")
+        check("MOV->MP4: lossless remux", res.message == "lossless remux")
         err = probe(res.output)
         check("MP4: h264 video stream", "Video: h264" in err, err[:200])
         check("MP4: aac audio stream", "Audio: aac" in err, err[:200])
@@ -164,24 +170,24 @@ def test_video(tmp: Path):
 
     res = converter.convert_video(src, tmp / "out",
                                   converter.ConvertOptions(video_format="MKV"))
-    check("MOV→MKV: converted", res.ok, res.message)
+    check("MOV->MKV: converted", res.ok, res.message)
     if res.ok:
-        check("MOV→MKV: lossless remux", res.message == "lossless remux")
+        check("MOV->MKV: lossless remux", res.message == "lossless remux")
 
     res = converter.convert_video(src, tmp / "out",
                                   converter.ConvertOptions(video_format="GIF"))
-    check("MOV→GIF: converted", res.ok, res.message)
+    check("MOV->GIF: converted", res.ok, res.message)
 
     res = converter.convert_video(src, tmp / "out",
                                   converter.ConvertOptions(video_format="MP3"))
-    check("MOV→MP3: converted", res.ok, res.message)
+    check("MOV->MP3: converted", res.ok, res.message)
 
     res = converter.convert_video(src, tmp / "out",
                                   converter.ConvertOptions(video_format="WEBM"))
     if not res.ok and "libvpx" in res.message.lower():
-        skip("MOV→WebM: encoder not in bundled ffmpeg", res.message)
+        skip("MOV->WebM: encoder not in bundled ffmpeg", res.message)
     else:
-        check("MOV→WebM: converted", res.ok, res.message)
+        check("MOV->WebM: converted", res.ok, res.message)
 
 
 def test_parallel_and_gpu(tmp: Path):
@@ -217,11 +223,11 @@ def test_parallel_and_gpu(tmp: Path):
         return
     vopts = converter.ConvertOptions(video_format="MP4", use_gpu=True)
     res = converter.convert_video(prores, tmp / "out_v", vopts)
-    check("ProRes→MP4: converted (GPU or software fallback)", res.ok, res.message)
+    check("ProRes->MP4: converted (GPU or software fallback)", res.ok, res.message)
     if res.ok:
-        check("ProRes→MP4: re-encoded", "re-encoded" in res.message, res.message)
+        check("ProRes->MP4: re-encoded", "re-encoded" in res.message, res.message)
         err = probe(res.output)
-        check("ProRes→MP4: playable h264 output", "Video: h264" in err, err[:200])
+        check("ProRes->MP4: playable h264 output", "Video: h264" in err, err[:200])
 
 
 def test_new_features(tmp: Path):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import sys
@@ -13,6 +14,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import cli, converter
 from tests.test_converter import make_test_heic, make_test_mov
+
+# legacy Windows code pages cannot print every message verbatim
+for _stream in (sys.stdout, sys.stderr):
+    with contextlib.suppress(AttributeError, ValueError, OSError):
+        _stream.reconfigure(errors="replace")
 
 PASS = 0
 FAIL = 0

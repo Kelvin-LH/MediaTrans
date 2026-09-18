@@ -43,6 +43,14 @@ jobs:
         run: python tests/test_converter.py
       - name: CLI tests
         run: python tests/test_cli.py
+      - name: Legacy Windows console encoding (cp1252)
+        # Guards against UnicodeEncodeError when stdout cannot represent the
+        # CLI symbols — the exact failure mode on a cp437/cp1252 console.
+        env:
+          PYTHONIOENCODING: cp1252:strict
+        run: |
+          python tests/test_converter.py
+          python tests/test_cli.py
 
   gui-smoke:
     name: GUI tests (offscreen Qt)

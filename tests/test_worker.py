@@ -9,6 +9,7 @@ cancellation) is exercised without opening a window.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 import tempfile
@@ -23,6 +24,11 @@ from PySide6.QtCore import QCoreApplication, QTimer
 from app import converter
 from app.ui import ConvertWorker
 from tests.test_converter import make_test_heic, make_test_mov
+
+# legacy Windows code pages cannot print every message verbatim
+for _stream in (sys.stdout, sys.stderr):
+    with contextlib.suppress(AttributeError, ValueError, OSError):
+        _stream.reconfigure(errors="replace")
 
 PASS = 0
 FAIL = 0
