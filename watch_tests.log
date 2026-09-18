@@ -1,0 +1,361 @@
+Refreshing run status every 20 seconds. Press Ctrl+C to quit.
+
+* main Tests · 35307338621
+Triggered via push less than a minute ago
+
+JOBS
+X GUI tests (offscreen Qt) in 26s (ID 105482119728)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  X Conversion worker integration test
+  - Build every window variant without a display
+  - Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ Lint (ruff) in 6s (ID 105482119868)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install ruff
+  ✓ Run ruff check .
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ Test (ubuntu-latest, 3.12) in 16s (ID 105482119878)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  ✓ Conversion engine tests
+  ✓ CLI tests
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* Test (windows-latest, 3.12) (ID 105482119889)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  * Install dependencies
+  * Conversion engine tests
+  * CLI tests
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+✓ Test (ubuntu-latest, 3.10) in 22s (ID 105482119904)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  ✓ Conversion engine tests
+  ✓ CLI tests
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ Test (macos-latest, 3.12) in 24s (ID 105482119926)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  ✓ Conversion engine tests
+  ✓ CLI tests
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* Test (windows-latest, 3.10) (ID 105482119933)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  * Install dependencies
+  * Conversion engine tests
+  * CLI tests
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+* Test (macos-latest, 3.10) (ID 105482119937)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  * Run actions/setup-python@v5
+  * Install dependencies
+  * Conversion engine tests
+  * CLI tests
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+GUI tests (offscreen Qt): .github#2
+
+X Process completed with exit code 1.
+GUI tests (offscreen Qt): .github#26
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+GUI tests (offscreen Qt): .github#1
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Lint (ruff): .github#2
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Lint (ruff): .github#1
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Test (ubuntu-latest, 3.12): .github#2
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Test (ubuntu-latest, 3.12): .github#1
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Test (ubuntu-latest, 3.10): .github#2
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Test (ubuntu-latest, 3.10): .github#1
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Test (macos-latest, 3.12): .github#2
+
+Refreshing run status every 20 seconds. Press Ctrl+C to quit.
+
+* main Tests · 35307338621
+Triggered via push about 1 minute ago
+
+JOBS
+X GUI tests (offscreen Qt) in 26s (ID 105482119728)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  X Conversion worker integration test
+  - Build every window variant without a display
+  - Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ Lint (ruff) in 6s (ID 105482119868)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install ruff
+  ✓ Run ruff check .
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ Test (ubuntu-latest, 3.12) in 16s (ID 105482119878)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  ✓ Conversion engine tests
+  ✓ CLI tests
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+X Test (windows-latest, 3.12) in 48s (ID 105482119889)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  X Conversion engine tests
+  - CLI tests
+  - Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ Test (ubuntu-latest, 3.10) in 22s (ID 105482119904)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  ✓ Conversion engine tests
+  ✓ CLI tests
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ Test (macos-latest, 3.12) in 24s (ID 105482119926)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  ✓ Conversion engine tests
+  ✓ CLI tests
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+X Test (windows-latest, 3.10) in 44s (ID 105482119933)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  X Conversion engine tests
+  - CLI tests
+  - Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* Test (macos-latest, 3.10) (ID 105482119937)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  ✓ Conversion engine tests
+  ✓ CLI tests
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  * Complete job
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+GUI tests (offscreen Qt): .github#2
+
+X Process completed with exit code 1.
+GUI tests (offscreen Qt): .github#26
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+GUI tests (offscreen Qt): .github#1
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Lint (ruff): .github#2
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Lint (ruff): .github#1
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Test (ubuntu-latest, 3.12): .github#2
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Test (ubuntu-latest, 3.12): .github#1
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Test (windows-latest, 3.12): .github#2
+
+X Process completed with exit code 1.
+Test (windows-latest, 3.12): .github#58
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Test (macos-latest, 3.12): .github#2
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Test (windows-latest, 3.10): .github#2
+
+X Process completed with exit code 1.
+Test (windows-latest, 3.10): .github#57
+
+X main Tests · 35307338621
+Triggered via push about 1 minute ago
+
+JOBS
+X GUI tests (offscreen Qt) in 26s (ID 105482119728)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  X Conversion worker integration test
+  - Build every window variant without a display
+  - Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ Lint (ruff) in 6s (ID 105482119868)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install ruff
+  ✓ Run ruff check .
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ Test (ubuntu-latest, 3.12) in 16s (ID 105482119878)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  ✓ Conversion engine tests
+  ✓ CLI tests
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+X Test (windows-latest, 3.12) in 48s (ID 105482119889)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  X Conversion engine tests
+  - CLI tests
+  - Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ Test (ubuntu-latest, 3.10) in 22s (ID 105482119904)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  ✓ Conversion engine tests
+  ✓ CLI tests
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ Test (macos-latest, 3.12) in 24s (ID 105482119926)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  ✓ Conversion engine tests
+  ✓ CLI tests
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+X Test (windows-latest, 3.10) in 44s (ID 105482119933)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  X Conversion engine tests
+  - CLI tests
+  - Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ Test (macos-latest, 3.10) in 49s (ID 105482119937)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Install dependencies
+  ✓ Conversion engine tests
+  ✓ CLI tests
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+GUI tests (offscreen Qt): .github#2
+
+X Process completed with exit code 1.
+GUI tests (offscreen Qt): .github#26
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+GUI tests (offscreen Qt): .github#1
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Lint (ruff): .github#2
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Lint (ruff): .github#1
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Test (ubuntu-latest, 3.12): .github#2
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Test (ubuntu-latest, 3.12): .github#1
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Test (windows-latest, 3.12): .github#2
+
+X Process completed with exit code 1.
+Test (windows-latest, 3.12): .github#58
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Test (macos-latest, 3.12): .github#2
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Test (windows-latest, 3.10): .github#2
+
+X Process completed with exit code 1.
+Test (windows-latest, 3.10): .github#57
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Test (macos-latest, 3.10): .github#2
+

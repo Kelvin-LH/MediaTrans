@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -55,6 +56,13 @@ def run_batch(app, jobs, opts, cancel_after: int | None = None):
     while not worker.isFinished():
         app.processEvents()
     worker.wait(30000)
+    # all_done is emitted from the worker thread as the run ends; drain the
+    # queued signal delivery so the final callback is observed reliably.
+    for _ in range(50):
+        app.processEvents()
+        if seen["stats"] is not None:
+            break
+        time.sleep(0.01)
     return seen, worker
 
 

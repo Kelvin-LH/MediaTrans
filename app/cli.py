@@ -18,6 +18,7 @@ Examples
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -44,6 +45,37 @@ _ALIASES.update({
 
 USE_COLOR = (sys.stderr.isatty() and os.environ.get("NO_COLOR") is None
              and os.name != "nt" or os.environ.get("FORCE_COLOR") is not None)
+
+
+def _configure_stdio() -> None:
+    """Keep the CLI alive on consoles whose code page cannot represent the
+    symbols below (legacy Windows cmd is cp437/cp1252 and would otherwise
+    abort with UnicodeEncodeError when output is redirected)."""
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(AttributeError, ValueError, OSError):
+            stream.reconfigure(errors="replace")
+
+
+_sym_cache: dict[str, str] = {}
+
+
+def _s(unicode_char: str, ascii_fallback: str) -> str:
+    """Return a symbol the current stdout can encode, falling back to ASCII.
+
+    Resolved lazily (and cached per encoding) so that redirecting sys.stdout
+    after import — or running on a legacy Windows code page — stays safe.
+    """
+    enc = getattr(sys.stdout, "encoding", None) or "utf-8"
+    key = f"{enc}|{unicode_char}"
+    cached = _sym_cache.get(key)
+    if cached is None:
+        try:
+            unicode_char.encode(enc)
+            cached = unicode_char
+        except (UnicodeEncodeError, LookupError):
+            cached = ascii_fallback
+        _sym_cache[key] = cached
+    return cached
 
 
 def _c(text: str, code: str) -> str:
@@ -148,7 +180,7 @@ def _resolve_formats(args) -> tuple[C.ConvertOptions, str | None]:
     if args.format:
         key = args.format.lower().lstrip(".")
         if key not in _ALIASES:
-            return opts, (f"unknown format {args.format!r} — "
+            return opts, (f"unknown format {args.format!r} {_s('—', '-')} "
                           f"see --list-formats")
         _, canonical = _ALIASES[key]
         if canonical in C.IMAGE_FORMATS:
@@ -222,7 +254,7 @@ def cmd_convert(args) -> int:
     jobs = [(f, default_dir or f.parent) for f in supported]
 
     if args.dry_run:
-        print(dim_s(f"dry run — {len(jobs)} file(s), nothing written"))
+        print(dim_s(f"dry run {_s('—', '-')} {len(jobs)} file(s), nothing written"))
         for src, d in jobs:
             kind = C.detect_kind(src)
             fmt = {"image": opts.image_format, "video": opts.video_format,
@@ -247,7 +279,7 @@ def cmd_convert(args) -> int:
         for f, _ in jobs:
             kind_counts[C.detect_kind(f)] += 1
         bits = ", ".join(f"{v} {k}" for k, v in kind_counts.items() if v)
-        print(dim_s(f"{APP_NAME} {__version__} — {len(jobs)} file(s) ({bits}), "
+        print(dim_s(f"{APP_NAME} {__version__} {_s('—', '-')} {len(jobs)} file(s) ({bits}), "
                     f"{C.cpu_workers() if opts.parallel else 1} worker(s)"))
         if opts.use_gpu and C.gpu_encoder():
             print(dim_s(f"hardware encoder: {C.gpu_encoder()}"))
@@ -273,10 +305,11 @@ def cmd_convert(args) -> int:
         delta = ""
         if res.in_bytes and res.out_bytes:
             pct = (1 - res.out_bytes / res.in_bytes) * 100
-            arrow = "↓" if pct >= 0 else "↑"
-            delta = dim_s(f"  {human(res.in_bytes)} → {human(res.out_bytes)}"
+            arrow = _s("↓", "-") if pct >= 0 else _s("↑", "+")
+            delta = dim_s(f"  {human(res.in_bytes)} {_s('→', '->')} "
+                          f"{human(res.out_bytes)}"
                           f" ({arrow}{abs(pct):.0f}%)")
-        print(f"[{done}/{total}] {tag} {name} → {out}"
+        print(f"[{done}/{total}] {tag} {name} {_s('→', '->')} {out}"
               f"{dim_s('  ' + res.message)}{delta}")
 
     stats = C.convert_many([p for p, _ in jobs],
@@ -323,7 +356,7 @@ def cmd_convert(args) -> int:
 
 
 def _print_summary(stats: C.BatchStats, total: int) -> None:
-    line = "─" * 46
+    line = _s("─", "-") * 46
     print(dim_s(line))
     print(f"  {ok_s(str(stats.ok) + ' converted')}"
           + (f"   {warn_s(str(stats.skipped) + ' skipped')}" if stats.skipped else "")
@@ -331,7 +364,8 @@ def _print_summary(stats: C.BatchStats, total: int) -> None:
     if stats.in_bytes:
         pct = stats.savings_pct
         trend = "smaller" if pct >= 0 else "larger"
-        print(f"  size     {human(stats.in_bytes)} → {human(stats.out_bytes)}"
+        print(f"  size     {human(stats.in_bytes)} {_s('→', '->')} "
+              f"{human(stats.out_bytes)}"
               f"  ({abs(pct):.0f}% {trend})")
     if stats.seconds > 0:
         rate = total / stats.seconds
@@ -339,9 +373,9 @@ def _print_summary(stats: C.BatchStats, total: int) -> None:
     if stats.failures:
         print(dim_s("  failures:"))
         for p, msg in stats.failures[:10]:
-            print(f"    {fail_s('✘')} {p.name}: {msg}")
+            print(f"    {fail_s(_s('✘', 'x'))} {p.name}: {msg}")
         if len(stats.failures) > 10:
-            print(dim_s(f"    … and {len(stats.failures) - 10} more"))
+            print(dim_s(f"    {_s('…', '...')} and {len(stats.failures) - 10} more"))
     print(dim_s(line))
 
 
@@ -436,7 +470,7 @@ def _dms(value, ref) -> float | None:
 
 
 def cmd_formats() -> int:
-    print(f"\n  {APP_NAME} {__version__} — supported formats\n")
+    print(f"\n  {APP_NAME} {__version__} {_s('—', '-')} supported formats\n")
     print(f"  input images   {', '.join(sorted(e.lstrip('.') for e in C.IMAGE_EXTS))}")
     print(f"  input videos   {', '.join(sorted(e.lstrip('.') for e in C.VIDEO_EXTS))}")
     print(f"  input audio    {', '.join(sorted(e.lstrip('.') for e in C.AUDIO_EXTS))}")
@@ -454,6 +488,7 @@ def cmd_formats() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_stdio()
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "info":
         return cmd_info(argv[1:])

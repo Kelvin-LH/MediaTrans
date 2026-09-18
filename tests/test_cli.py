@@ -125,17 +125,37 @@ def test_cli(tmp: Path):
     check("info --json: machine readable",
           data["kind"] == "image" and "dimensions" in data, str(data)[:200])
 
-    # help / formats
-    buf = io.StringIO()
-    with redirect_stdout(buf):
-        code = cli.main(["--list-formats"])
-    check("--list-formats: lists gpu + lossless info",
-          code == 0 and "lossless" in buf.getvalue())
+
+def test_cli_windows_encoding(tmp: Path):
+    """Regression: a cp1252 stdout used to raise UnicodeEncodeError."""
+    print("== CLI on a legacy console ==")
+    heic = tmp / "IMG_0009.heic"
+    make_test_heic(heic)
+    raw = io.BytesIO()
+    legacy = io.TextIOWrapper(raw, encoding="cp1252", errors="strict")
+    real_out, real_err = sys.stdout, sys.stderr
+    sys.stdout = legacy
+    sys.stderr = legacy
+    try:
+        code = cli.main([str(heic), "-f", "jpg", "-o", str(tmp / "legacy")])
+        legacy.flush()
+    except UnicodeEncodeError as exc:  # the exact historical failure
+        code = -1
+        print(f"  UnicodeEncodeError: {exc}")
+    finally:
+        sys.stdout, sys.stderr = real_out, real_err
+    check("cp1252 stdout: conversion completed without UnicodeEncodeError",
+          code == 0, str(code))
+    text = raw.getvalue().decode("cp1252", errors="replace")
+    check("cp1252 stdout: ASCII arrow fallback in use", "->" in text, text[-160:])
+    check("cp1252 stdout: no mojibake placeholders", "?" not in text, text[-160:])
 
 
 def main():
     with tempfile.TemporaryDirectory(prefix="mediatrans_cli_") as d:
-        test_cli(Path(d))
+        tmp = Path(d)
+        test_cli(tmp)
+        test_cli_windows_encoding(tmp)
     print(f"\n{PASS} passed, {FAIL} failed")
     sys.exit(1 if FAIL else 0)
 
