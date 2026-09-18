@@ -14,13 +14,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from PIL import Image
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from app.i18n import set_language
-from app.ui import QSS, MainWindow
+from app.ui import MainWindow, theme_qss
 
-SAMPLES = ["IMG_2049.HEIC", "IMG_2050.heic", "IMG_2051.HEIF", "VID_3052.mov"]
+SAMPLES = ["IMG_2049.HEIC", "IMG_2050.heic", "IMG_2051.HEIF", "VID_3052.mov",
+           "song.flac"]
 
 OUT = Path(__file__).resolve().parents[1] / "docs"
 OUT.mkdir(exist_ok=True)
@@ -59,22 +59,25 @@ def printwindow_to_png(hwnd: int, path: Path):
 def main():
     app = QApplication([])
     app.setStyle("Fusion")
-    app.setStyleSheet(QSS)
-    for lang in ("en", "zh"):
-        set_language(lang)
-        win = MainWindow(language=lang)
-        win.resize(1000, 960)
-        for s in SAMPLES:
-            win.file_list.addItem(s)
-        win.retranslate()
-        win.show()
-        for _ in range(8):  # let the layout settle completely
-            app.processEvents()
-            time.sleep(0.1)
-        hwnd = int(win.winId())
-        printwindow_to_png(hwnd, OUT / f"screenshot_{lang}.png")
-        win.close()
-        print(f"saved screenshot_{lang}.png")
+    for theme in ("light", "dark"):
+        app.setStyleSheet(theme_qss(theme == "dark"))
+        for lang in ("en", "zh"):
+            set_language(lang)
+            win = MainWindow(language=lang, theme=theme)
+            win.resize(1280, 980)
+            for s in SAMPLES:
+                win.file_list.addItem(s)
+            win.retranslate()
+            win._refresh_list_label()
+            win.show()
+            for _ in range(8):  # let the layout settle completely
+                app.processEvents()
+                time.sleep(0.1)
+            hwnd = int(win.winId())
+            suffix = f"_{theme}" if theme == "dark" else ""
+            printwindow_to_png(hwnd, OUT / f"screenshot{suffix}_{lang}.png")
+            win.close()
+            print(f"saved screenshot{suffix}_{lang}.png")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,86 @@
+name: Bug report
+description: Something did not convert correctly, or the app misbehaved
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! For conversion problems the **log file** is the
+        single most useful thing you can attach — it contains the full ffmpeg
+        output for every failure.
+
+        - Windows: `%LOCALAPPDATA%\MediaTrans\logs\mediatrans.log`
+        - macOS / Linux: `~/MediaTrans/logs/mediatrans.log`
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where did it happen?
+      options:
+        - Desktop app (GUI)
+        - Command line (mediatrans)
+        - Both
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: MediaTrans version
+      description: Shown in the About dialog, or run `mediatrans --version`
+      placeholder: "0.3.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: input
+    attributes:
+      label: Input file type and source device
+      description: Format and where the file came from, if you know it
+      placeholder: "HEIC from iPhone 15 Pro / MOV with apac spatial audio"
+    validations:
+      required: true
+  - type: input
+    id: expected
+    attributes:
+      label: Output format you selected
+      placeholder: "WebP, quality 85, resize 1920"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: The exact error message helps a lot.
+      placeholder: "Error opening output files: Invalid argument"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Relevant log excerpt
+      description: Paste the failing section of the log file (it includes the ffmpeg output).
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I am using the latest release
+          required: true
+        - label: I searched existing issues for the same problem
+          required: true
+        - label: I removed any personal data (faces, locations) from the attachments
+          required: false

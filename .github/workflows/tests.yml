@@ -1,0 +1,96 @@
+name: Tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+
+  test:
+    name: Test (${{ matrix.os }}, ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Conversion engine tests
+        run: python tests/test_converter.py
+      - name: CLI tests
+        run: python tests/test_cli.py
+
+  gui-smoke:
+    name: GUI tests (offscreen Qt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0
+      - name: Conversion worker integration test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tests/test_worker.py
+      - name: Build every window variant without a display
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python - <<'PY'
+          import sys, time
+          from PySide6.QtWidgets import QApplication
+          from app.i18n import set_language
+          from app.ui import MainWindow, theme_qss
+
+          app = QApplication([])
+          app.setStyle("Fusion")
+          for theme in ("light", "dark"):
+              app.setStyleSheet(theme_qss(theme == "dark"))
+              for lang in ("en", "zh"):
+                  set_language(lang)
+                  w = MainWindow(language=lang, theme=theme)
+                  for i in range(w.image_combo.count()):
+                      w.image_combo.setCurrentIndex(i)
+                  for i in range(w.video_combo.count()):
+                      w.video_combo.setCurrentIndex(i)
+                  for i in range(w.preset_combo.count()):
+                      w.preset_combo.setCurrentIndex(i)
+                  for i in range(w.conflict_combo.count()):
+                      w.conflict_combo.setCurrentIndex(i)
+                  w.add_paths(["."])
+                  w.retranslate()
+                  w.show()
+                  for _ in range(3):
+                      app.processEvents()
+                  w.close()
+          print("all UI variants built and switched OK")
+          PY

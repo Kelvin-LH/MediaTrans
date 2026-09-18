@@ -1,140 +1,215 @@
-"""Main window for MediaTrans (PySide6, bilingual EN/中文, modern theme)."""
+"""Main window for MediaTrans (PySide6, bilingual EN/中文).
+
+Layout: language / theme / log in the top bar, the file queue on the left, a
+scrollable settings panel on the right (presets, formats, quality, resize,
+metadata, performance, output), and actions + progress + log at the bottom.
+"""
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from PySide6.QtCore import QLocale, QMutex, QMutexLocker, QSettings, Qt, QThread, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QIcon, QLinearGradient, QPainter, QPixmap
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
-                               QGridLayout, QGroupBox, QHBoxLayout, QLabel,
-                               QLineEdit, QListWidget, QMainWindow, QMessageBox,
-                               QProgressBar, QPushButton, QRadioButton, QSlider,
-                               QSplitter, QVBoxLayout, QWidget)
+from PySide6.QtCore import QLocale, QSettings, Qt, QThread, QUrl, Signal
+from PySide6.QtGui import (
+    QColor,
+    QDesktopServices,
+    QFont,
+    QIcon,
+    QKeySequence,
+    QLinearGradient,
+    QPainter,
+    QPixmap,
+    QShortcut,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMainWindow,
+    QMessageBox,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QRadioButton,
+    QScrollArea,
+    QSlider,
+    QSpinBox,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
-from . import __version__, APP_NAME, APP_REPO, converter
+from . import APP_NAME, APP_REPO, __version__, converter
 from .i18n import LANG_NAMES, current_language, set_language, tr
 
-DROP_EXTS = converter.IMAGE_EXTS | converter.VIDEO_EXTS
+DROP_EXTS = converter.ALL_EXTS
 
-IMAGE_CODES = list(converter.IMAGE_FORMATS)   # JPEG, PNG, WEBP, AVIF, TIFF, BMP, PDF, GIF
-VIDEO_CODES = list(converter.VIDEO_FORMATS)   # MP4, MKV, WEBM, GIF, MP3
+IMAGE_CODES = list(converter.IMAGE_FORMATS)
+VIDEO_CODES = list(converter.VIDEO_FORMATS)
+AUDIO_CODES = list(converter.AUDIO_FORMATS)
+CONFLICT_CODES = list(converter.CONFLICT_POLICIES)
 
-FMT_KEY = {"JPEG": "fmt_jpg"}  # i18n key overrides for format codes
+# i18n key overrides for format codes whose key is not fmt_<code>
+FMT_KEY = {"JPEG": "fmt_jpg"}
+FMT_PREFIX = {"image": "fmt_", "video": "vfmt_", "audio": "afmt_"}
 
-QSS = """
-* { outline: none; }
-QMainWindow, QWidget { background: #eef1f6; color: #1f2430; font-size: 13px; }
-QLabel { background: transparent; }
+# preset name -> (image, video, audio, quality, resize_long_edge)
+PRESETS: dict[str, tuple[str, str, str, int, int]] = {
+    "custom": ("", "", "", 0, 0),
+    "web": ("WEBP", "MP4", "MP3", 85, 2560),
+    "social": ("JPEG", "MP4", "M4A", 88, 1920),
+    "archive": ("PNG", "MKV", "FLAC", 100, 0),
+    "compat": ("JPEG", "MP4", "MP3", 95, 0),
+    "small": ("WEBP", "MP4", "OGG", 75, 1280),
+}
 
-QGroupBox {
-    background: #ffffff;
-    border: 1px solid #e3e8f2;
+
+def theme_qss(dark: bool) -> str:
+    p = {
+        "bg": "#16181d" if dark else "#eef1f6",
+        "card": "#1f2229" if dark else "#ffffff",
+        "border": "#2c313a" if dark else "#e3e8f2",
+        "field": "#262a33" if dark else "#ffffff",
+        "field_border": "#3a404b" if dark else "#d5dbe8",
+        "text": "#e6e9ef" if dark else "#1f2430",
+        "muted": "#9aa3b2" if dark else "#6b7280",
+        "accent": "#8b7cff" if dark else "#6d5dfc",
+        "accent_hover": "#7a68ff" if dark else "#5b49f2",
+        "accent_soft": "#2a2542" if dark else "#ece7ff",
+        "hover_row": "#262b35" if dark else "#f1f0fb",
+        "log_text": "#a8b1c1" if dark else "#4b5563",
+        "disabled": "#6b7280" if dark else "#9aa3b2",
+        "disabled_bg": "#20232a" if dark else "#f4f6fa",
+    }
+    return f"""
+* {{ outline: none; }}
+QMainWindow, QWidget {{ background: {p['bg']}; color: {p['text']}; font-size: 13px; }}
+QLabel {{ background: transparent; }}
+
+QGroupBox {{
+    background: {p['card']};
+    border: 1px solid {p['border']};
     border-radius: 12px;
-    margin-top: 16px;
-    padding: 16px 12px 12px 12px;
+    margin-top: 14px;
+    padding: 14px 12px 10px 12px;
     font-weight: 600;
-}
-QGroupBox::title {
+}}
+QGroupBox::title {{
     subcontrol-origin: margin;
-    left: 14px; top: 4px;
-    padding: 0 6px;
-    color: #6d5dfc;
-}
+    left: 14px; top: 4px; padding: 0 6px;
+    color: {p['accent']};
+}}
 
-QListWidget#fileList {
-    background: #fbfcff;
-    border: 2px dashed #c9d2e6;
+QListWidget#fileList {{
+    background: {p['field']};
+    border: 2px dashed {p['field_border']};
     border-radius: 12px;
     padding: 8px;
-    font-size: 13px;
-}
-QListWidget#fileList::item { padding: 6px 8px; border-radius: 6px; }
-QListWidget#fileList::item:selected { background: #ece7ff; color: #1f2430; }
-QListWidget#fileList::item:hover:!selected { background: #f1f0fb; }
+}}
+QListWidget#fileList::item {{ padding: 5px 8px; border-radius: 6px; }}
+QListWidget#fileList::item:selected {{ background: {p['accent_soft']}; color: {p['text']}; }}
+QListWidget#fileList::item:hover:!selected {{ background: {p['hover_row']}; }}
 
-QListWidget#logList {
-    background: #ffffff;
-    border: 1px solid #e3e8f2;
+QListWidget#logList {{
+    background: {p['card']};
+    border: 1px solid {p['border']};
     border-radius: 12px;
     padding: 6px;
     font-size: 12px;
-    color: #4b5563;
-}
+    color: {p['log_text']};
+}}
 
-QPushButton {
-    background: #ffffff;
-    border: 1px solid #d5dbe8;
+QPushButton {{
+    background: {p['field']};
+    border: 1px solid {p['field_border']};
     border-radius: 8px;
     padding: 7px 16px;
     font-weight: 500;
-}
-QPushButton:hover { border-color: #6d5dfc; color: #6d5dfc; }
-QPushButton:pressed { background: #f1eeff; }
-QPushButton:disabled { color: #9aa3b2; border-color: #e3e8f2; background: #f4f6fa; }
+}}
+QPushButton:hover {{ border-color: {p['accent']}; color: {p['accent']}; }}
+QPushButton:pressed {{ background: {p['accent_soft']}; }}
+QPushButton:disabled {{ color: {p['disabled']}; border-color: {p['border']}; background: {p['disabled_bg']}; }}
 
-QPushButton#convertBtn {
-    background: #6d5dfc; color: #ffffff; border: none;
+QPushButton#convertBtn {{
+    background: {p['accent']}; color: #ffffff; border: none;
     font-weight: 600; padding: 8px 26px; font-size: 14px;
-}
-QPushButton#convertBtn:hover { background: #5b49f2; }
-QPushButton#convertBtn:disabled { background: #c7c2f5; color: #f4f3ff; }
+}}
+QPushButton#convertBtn:hover {{ background: {p['accent_hover']}; }}
+QPushButton#convertBtn:disabled {{ background: {p['accent_soft']}; color: {p['disabled']}; }}
 
-QProgressBar {
-    background: #e3e8f2; border: none; border-radius: 7px;
-    height: 14px; text-align: center; color: transparent; font-size: 10px;
-}
-QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6d5dfc, stop:1 #00b4d8); border-radius: 7px; }
+QProgressBar {{
+    background: {p['border']}; border: none; border-radius: 7px;
+    height: 14px; text-align: center; color: transparent;
+}}
+QProgressBar::chunk {{
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+        stop:0 {p['accent']}, stop:1 #00b4d8);
+    border-radius: 7px;
+}}
 
-QSlider { min-height: 22px; }
-QSlider::groove:horizontal { height: 6px; background: #e3e8f2; border-radius: 3px; }
-QSlider::sub-page:horizontal { background: #b3a8ff; border-radius: 3px; }
-QSlider::handle:horizontal {
+QSlider {{ min-height: 22px; }}
+QSlider::groove:horizontal {{ height: 6px; background: {p['border']}; border-radius: 3px; }}
+QSlider::sub-page:horizontal {{ background: {p['accent_soft']}; border-radius: 3px; }}
+QSlider::handle:horizontal {{
     width: 16px; height: 16px; margin: -5px 0;
-    border-radius: 8px; background: #6d5dfc;
-}
-QSlider::handle:horizontal:hover { background: #5b49f2; }
+    border-radius: 8px; background: {p['accent']};
+}}
 
-QComboBox {
-    background: #ffffff; border: 1px solid #d5dbe8;
-    border-radius: 8px; padding: 5px 30px 5px 10px;
-    min-height: 20px;
-}
-QComboBox:hover { border-color: #6d5dfc; }
-QComboBox::drop-down { border: none; width: 24px; }
-QComboBox QAbstractItemView {
-    background: #ffffff; border: 1px solid #d5dbe8;
-    selection-background-color: #ece7ff; selection-color: #1f2430;
-}
+QComboBox, QSpinBox, QLineEdit {{
+    background: {p['field']}; color: {p['text']};
+    border: 1px solid {p['field_border']};
+    border-radius: 8px; padding: 5px 8px; min-height: 20px;
+}}
+QComboBox:hover, QSpinBox:hover, QLineEdit:hover {{ border-color: {p['accent']}; }}
+QComboBox:focus, QSpinBox:focus, QLineEdit:focus {{ border-color: {p['accent']}; }}
+QComboBox::drop-down {{ border: none; width: 22px; }}
+QSpinBox::up-button, QSpinBox::down-button {{
+    width: 16px; background: transparent; border: none;
+}}
+QComboBox QAbstractItemView {{
+    background: {p['card']}; color: {p['text']};
+    border: 1px solid {p['field_border']};
+    selection-background-color: {p['accent_soft']}; selection-color: {p['text']};
+}}
+QLineEdit:disabled, QSpinBox:disabled {{ background: {p['disabled_bg']}; color: {p['disabled']}; }}
 
-QCheckBox, QRadioButton { spacing: 8px; background: transparent; }
-QCheckBox::indicator {
+QCheckBox, QRadioButton {{ spacing: 8px; background: transparent; }}
+QCheckBox::indicator {{
     width: 17px; height: 17px;
-    border: 1px solid #c9d2e6; border-radius: 5px; background: #ffffff;
-}
-QCheckBox::indicator:hover { border-color: #6d5dfc; }
-QCheckBox::indicator:checked {
-    background: #6d5dfc; border-color: #6d5dfc;
-    image: url(:/qt-project.org/styles/commonstyle/images/standardbutton-apply-16.png);
-}
-QRadioButton::indicator {
+    border: 1px solid {p['field_border']}; border-radius: 5px; background: {p['field']};
+}}
+QCheckBox::indicator:hover {{ border-color: {p['accent']}; }}
+QCheckBox::indicator:checked {{ background: {p['accent']}; border-color: {p['accent']}; }}
+QRadioButton::indicator {{
     width: 17px; height: 17px;
-    border: 1px solid #c9d2e6; border-radius: 9px; background: #ffffff;
-}
-QRadioButton::indicator:hover { border-color: #6d5dfc; }
-QRadioButton::indicator:checked {
-    border: 5px solid #6d5dfc; background: #ffffff; width: 7px; height: 7px;
-}
+    border: 1px solid {p['field_border']}; border-radius: 9px; background: {p['field']};
+}}
+QRadioButton::indicator:hover {{ border-color: {p['accent']}; }}
+QRadioButton::indicator:checked {{
+    border: 5px solid {p['accent']}; background: {p['field']}; width: 7px; height: 7px;
+}}
 
-QLineEdit {
-    background: #ffffff; border: 1px solid #d5dbe8;
-    border-radius: 8px; padding: 6px 10px;
-}
-QLineEdit:focus { border-color: #6d5dfc; }
-QLineEdit:disabled { background: #f4f6fa; color: #9aa3b2; }
-
-QSplitter::handle { background: transparent; width: 6px; }
+QScrollArea {{ border: none; background: transparent; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
+QScrollBar::handle:vertical {{ background: {p['field_border']}; border-radius: 5px; min-height: 30px; }}
+QScrollBar::handle:vertical:hover {{ background: {p['accent']}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+QSplitter::handle {{ background: transparent; width: 6px; }}
+QPlainTextEdit {{
+    background: {p['field']}; color: {p['text']};
+    border: 1px solid {p['field_border']}; border-radius: 8px; padding: 6px;
+    font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px;
+}}
 """
 
 
@@ -150,7 +225,6 @@ def app_icon() -> QIcon:
     p.setPen(Qt.NoPen)
     p.drawRoundedRect(8, 8, 112, 112, 28, 28)
     p.setPen(QColor("white"))
-    from PySide6.QtGui import QFont
     f = QFont()
     f.setPixelSize(58)
     f.setBold(True)
@@ -168,14 +242,18 @@ class DropList(QListWidget):
         self.setAcceptDrops(True)
         self.setSelectionMode(QListWidget.ExtendedSelection)
         self.setObjectName("fileList")
-        self.setAlternatingRowColors(False)
 
     def _paths(self, event) -> list[str]:
-        return [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        out = []
+        for u in event.mimeData().urls():
+            if u.isLocalFile():
+                out.append(u.toLocalFile())
+        return out
 
     def dragEnterEvent(self, event):
-        if any(Path(p).suffix.lower() in DROP_EXTS for p in self._paths(event)):
-            self.setStyleSheet("QListWidget#fileList { border-color: #6d5dfc; background: #f3f0ff; }")
+        if any(Path(p).is_dir() or Path(p).suffix.lower() in DROP_EXTS
+               for p in self._paths(event)):
+            self.setStyleSheet("QListWidget#fileList { border-color: #6d5dfc; }")
             event.acceptProposedAction()
         else:
             event.ignore()
@@ -189,76 +267,106 @@ class DropList(QListWidget):
 
     def dropEvent(self, event):
         self.setStyleSheet("")
-        paths = [p for p in self._paths(event) if Path(p).suffix.lower() in DROP_EXTS]
+        paths = [p for p in self._paths(event)
+                 if Path(p).is_dir() or Path(p).suffix.lower() in DROP_EXTS]
         if paths:
             self.files_added.emit(paths)
             event.acceptProposedAction()
 
 
+class ErrorDialog(QDialog):
+    """Full error text with copy-to-clipboard."""
+
+    def __init__(self, parent, title: str, body: str):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(680, 420)
+        lay = QVBoxLayout(self)
+        box = QPlainTextEdit(body)
+        box.setReadOnly(True)
+        lay.addWidget(box)
+        row = QHBoxLayout()
+        copy = QPushButton(tr("copy"))
+        copy.clicked.connect(lambda: QApplication.clipboard().setText(body))
+        btns = QDialogButtonBox(QDialogButtonBox.Close)
+        btns.rejected.connect(self.reject)
+        row.addWidget(copy)
+        row.addStretch()
+        row.addWidget(btns)
+        lay.addLayout(row)
+
+
 class ConvertWorker(QThread):
-    progress = Signal(int, int, str)          # started(1-based), total, filename
-    file_done = Signal(str, str, bool, str)   # filename, output, ok, detail
-    all_done = Signal(int, int, bool)         # ok, fail, cancelled
+    progress = Signal(int, int, str)             # done, total, name
+    file_done = Signal(str, str, bool, str, int, int, bool)
+    all_done = Signal(object)                    # BatchStats
 
     def __init__(self, jobs: list[tuple[Path, Path]], opts: converter.ConvertOptions):
         super().__init__()
         self._jobs = jobs
         self._opts = opts
         self._cancelled = False
-        self._total = len(jobs)
-        self._started = 0
-        self._ok = 0
-        self._fail = 0
-        self._lock = QMutex()
 
     def cancel(self):
         self._cancelled = True
 
     def run(self):
-        if self._opts.parallel and self._total > 1:
-            workers = min(self._total, converter.cpu_workers())
-            with ThreadPoolExecutor(max_workers=workers) as ex:
-                futures = [ex.submit(self._convert_one, src, d)
-                           for src, d in self._jobs]
-                for f in as_completed(futures):
-                    f.result()
+        if len({d for _, d in self._jobs}) == 1:
+            stats = converter.convert_many(
+                [s for s, _ in self._jobs], self._jobs[0][1], self._opts,
+                on_progress=self._emit, should_cancel=lambda: self._cancelled)
         else:
+            stats = converter.BatchStats()
+            groups: dict[Path, list[Path]] = {}
             for src, d in self._jobs:
-                self._convert_one(src, d)
-        self.all_done.emit(self._ok, self._fail, self._cancelled)
+                groups.setdefault(d, []).append(src)
+            offset = 0
+            for d, group in groups.items():
+                def cb(done, total, path, res, _off=offset):
+                    self._emit(_off + done, len(self._jobs), path, res)
+                s = converter.convert_many(
+                    group, d, self._opts, on_progress=cb,
+                    should_cancel=lambda: self._cancelled)
+                stats.ok += s.ok
+                stats.fail += s.fail
+                stats.skipped += s.skipped
+                stats.in_bytes += s.in_bytes
+                stats.out_bytes += s.out_bytes
+                stats.seconds += s.seconds
+                stats.failures.extend(s.failures)
+                offset += len(group)
+        self.all_done.emit(stats)
 
-    def _convert_one(self, src: Path, dst_dir: Path):
-        if self._cancelled:
-            return
-        with QMutexLocker(self._lock):
-            self._started += 1
-            self.progress.emit(self._started, self._total, src.name)
-        result = converter.convert_file(src, dst_dir, self._opts)
-        out = str(result.output) if result.output else ""
-        with QMutexLocker(self._lock):
-            self._ok += result.ok
-            self._fail += not result.ok
-        self.file_done.emit(src.name, out, result.ok, result.message)
+    def _emit(self, done: int, total: int, path: Path, res: converter.ConvertResult):
+        self.progress.emit(done, total, path.name)
+        out = str(res.output) if res.output else ""
+        self.file_done.emit(path.name, out, res.ok, res.message,
+                            res.in_bytes, res.out_bytes, res.skipped)
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, language: str | None = None):
+    def __init__(self, language: str | None = None, theme: str | None = None):
         super().__init__()
         self._settings = QSettings(APP_NAME, APP_NAME)
-        lang = language or self._settings.value("language", None) or self._detect_language()
+        lang = (language or self._settings.value("language", None)
+                or self._detect_language())
         set_language(lang)
+        self._theme = theme or self._settings.value("theme", "light")
 
         self._worker: ConvertWorker | None = None
         self._last_output: Path | None = None
+        self._errors: dict[str, str] = {}
 
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
         self._build_ui()
+        self._load_settings()
         self.retranslate()
-        self.resize(1000, 960)
-        self.setMinimumSize(900, 920)
+        self._apply_theme()
+        self.resize(1280, 980)
+        self.setMinimumSize(1060, 700)
 
-    # ---------- UI construction ----------
+    # ------------------------------------------------------- UI construction --
 
     def _build_ui(self):
         central = QWidget()
@@ -267,7 +375,6 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(16, 12, 16, 14)
         root.setSpacing(10)
 
-        # -- top bar: language + about
         top = QHBoxLayout()
         self.lang_label = QLabel()
         self.lang_combo = QComboBox()
@@ -275,44 +382,73 @@ class MainWindow(QMainWindow):
             self.lang_combo.addItem(name, code)
         self.lang_combo.setCurrentIndex(list(LANG_NAMES).index(current_language()))
         self.lang_combo.currentIndexChanged.connect(self._on_language_changed)
-        top.addWidget(self.lang_label)
-        top.addWidget(self.lang_combo)
-        top.addStretch()
+        self.theme_btn = QPushButton()
+        self.theme_btn.clicked.connect(self._toggle_theme)
         self.log_file_btn = QPushButton()
         self.log_file_btn.clicked.connect(self._open_log)
-        top.addWidget(self.log_file_btn)
         self.about_btn = QPushButton()
         self.about_btn.clicked.connect(self._show_about)
+        top.addWidget(self.lang_label)
+        top.addWidget(self.lang_combo)
+        top.addWidget(self.theme_btn)
+        top.addStretch()
+        top.addWidget(self.log_file_btn)
         top.addWidget(self.about_btn)
         root.addLayout(top)
 
-        # -- middle: file list | settings
         split = QSplitter(Qt.Horizontal)
         split.setHandleWidth(10)
         root.addWidget(split, 1)
 
+        # ---- left: queue
         left = QWidget()
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
         self.list_label = QLabel()
         self.file_list = DropList()
-        self.file_list.files_added.connect(self.add_files)
+        self.file_list.files_added.connect(self.add_paths)
+        self.file_list.itemDoubleClicked.connect(self._show_file_info)
+        self.file_list.setToolTip(tr("tooltip_list"))
         btns = QHBoxLayout()
         self.add_btn = QPushButton()
         self.add_btn.clicked.connect(self._pick_files)
+        self.add_dir_btn = QPushButton()
+        self.add_dir_btn.clicked.connect(self._pick_folder)
+        self.remove_btn = QPushButton()
+        self.remove_btn.clicked.connect(self._remove_selected)
         self.clear_btn = QPushButton()
-        self.clear_btn.clicked.connect(self.file_list.clear)
-        btns.addWidget(self.add_btn)
-        btns.addWidget(self.clear_btn)
+        self.clear_btn.clicked.connect(self._clear)
+        for b in (self.add_btn, self.add_dir_btn, self.remove_btn, self.clear_btn):
+            btns.addWidget(b)
         btns.addStretch()
         lv.addWidget(self.list_label)
         lv.addWidget(self.file_list, 1)
         lv.addLayout(btns)
         split.addWidget(left)
 
-        right = QWidget()
-        rv = QVBoxLayout(right)
-        rv.setContentsMargins(0, 0, 0, 0)
+        # ---- right: settings in a scroll area, arranged in two columns
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        panel = QWidget()
+        columns = QHBoxLayout(panel)
+        columns.setContentsMargins(0, 0, 6, 0)
+        columns.setSpacing(12)
+        col_a = QVBoxLayout()
+        col_b = QVBoxLayout()
+        col_a.setSpacing(8)
+        col_b.setSpacing(8)
+        columns.addLayout(col_a, 1)
+        columns.addLayout(col_b, 1)
+
+        self.preset_group = QGroupBox()
+        pg = QVBoxLayout(self.preset_group)
+        self.preset_combo = QComboBox()
+        for code in PRESETS:
+            self.preset_combo.addItem(code, code)
+        self.preset_combo.currentIndexChanged.connect(self._apply_preset)
+        pg.addWidget(self.preset_combo)
+        col_a.addWidget(self.preset_group)
 
         self.format_group = QGroupBox()
         grid = QGridLayout(self.format_group)
@@ -321,47 +457,70 @@ class MainWindow(QMainWindow):
         self.image_combo = QComboBox()
         for code in IMAGE_CODES:
             self.image_combo.addItem(code, code)
-        self.image_combo.currentIndexChanged.connect(self._update_quality_enabled)
+        self.image_combo.currentIndexChanged.connect(self._on_manual_change)
         self.video_label = QLabel()
         self.video_combo = QComboBox()
         for code in VIDEO_CODES:
             self.video_combo.addItem(code, code)
+        self.video_combo.currentIndexChanged.connect(self._on_manual_change)
+        self.audio_label = QLabel()
+        self.audio_combo = QComboBox()
+        for code in AUDIO_CODES:
+            self.audio_combo.addItem(code, code)
+        self.audio_combo.currentIndexChanged.connect(self._on_manual_change)
         grid.addWidget(self.image_label, 0, 0)
         grid.addWidget(self.image_combo, 0, 1)
         grid.addWidget(self.video_label, 1, 0)
         grid.addWidget(self.video_combo, 1, 1)
+        grid.addWidget(self.audio_label, 2, 0)
+        grid.addWidget(self.audio_combo, 2, 1)
         self.video_note = QLabel()
         self.video_note.setWordWrap(True)
-        sp = self.video_note.sizePolicy()
-        sp.setHeightForWidth(True)
-        self.video_note.setSizePolicy(sp)
-        self.video_note.setFixedHeight(48)
-        grid.addWidget(self.video_note, 2, 0, 1, 2)
+        self.video_note.setFixedHeight(30)
+        grid.addWidget(self.video_note, 3, 0, 1, 2)
 
         qrow = QHBoxLayout()
         self.quality_label = QLabel()
         self.quality_value = QLabel()
         self.quality_slider = QSlider(Qt.Horizontal)
-        self.quality_slider.setRange(60, 100)
+        self.quality_slider.setRange(50, 100)
         self.quality_slider.setValue(95)
         self.quality_value.setText(str(self.quality_slider.value()))
-        self.quality_slider.valueChanged.connect(
-            lambda v: self.quality_value.setText(str(v)))
+        self.quality_slider.valueChanged.connect(self._on_quality)
         qrow.addWidget(self.quality_label)
         qrow.addWidget(self.quality_slider, 1)
         qrow.addWidget(self.quality_value)
-        grid.addLayout(qrow, 3, 0, 1, 2)
-        rv.addWidget(self.format_group)
+        grid.addLayout(qrow, 4, 0, 1, 2)
+
+        rrow = QHBoxLayout()
+        self.resize_label = QLabel()
+        self.resize_check = QCheckBox()
+        self.resize_spin = QSpinBox()
+        self.resize_spin.setRange(64, 20000)
+        self.resize_spin.setSingleStep(64)
+        self.resize_spin.setValue(1920)
+        self.resize_spin.setSuffix(" px")
+        self.resize_spin.setEnabled(False)
+        self.resize_check.toggled.connect(self.resize_spin.setEnabled)
+        rrow.addWidget(self.resize_check)
+        rrow.addWidget(self.resize_spin)
+        rrow.addStretch()
+        grid.addLayout(rrow, 5, 0, 1, 2)
+        col_a.addWidget(self.format_group)
 
         self.meta_group = QGroupBox()
         mv = QVBoxLayout(self.meta_group)
         self.meta_check = QCheckBox()
         self.meta_check.setChecked(True)
+        self.timestamps_check = QCheckBox()
+        self.timestamps_check.setChecked(True)
+        self.date_check = QCheckBox()
         self.meta_note = QLabel()
         self.meta_note.setWordWrap(True)
-        mv.addWidget(self.meta_check)
-        mv.addWidget(self.meta_note)
-        rv.addWidget(self.meta_group)
+        for w in (self.meta_check, self.timestamps_check, self.date_check,
+                  self.meta_note):
+            mv.addWidget(w)
+        col_b.addWidget(self.meta_group)
 
         self.perf_group = QGroupBox()
         pv = QVBoxLayout(self.perf_group)
@@ -375,10 +534,9 @@ class MainWindow(QMainWindow):
         if not self._gpu_encoder:
             self.gpu_check.setChecked(False)
             self.gpu_check.setEnabled(False)
-        pv.addWidget(self.parallel_check)
-        pv.addWidget(self.gpu_check)
-        pv.addWidget(self.gpu_note)
-        rv.addWidget(self.perf_group)
+        for w in (self.parallel_check, self.gpu_check, self.gpu_note):
+            pv.addWidget(w)
+        col_b.addWidget(self.perf_group)
 
         self.out_group = QGroupBox()
         ov = QVBoxLayout(self.out_group)
@@ -391,18 +549,28 @@ class MainWindow(QMainWindow):
         self.out_browse.setEnabled(False)
         self.out_same.toggled.connect(self._update_output_enabled)
         self.out_browse.clicked.connect(self._browse_output)
+        self.conflict_label = QLabel()
+        self.conflict_combo = QComboBox()
+        for code in CONFLICT_CODES:
+            self.conflict_combo.addItem(code, code)
         orow = QHBoxLayout()
         orow.addWidget(self.out_path, 1)
         orow.addWidget(self.out_browse)
+        crow = QHBoxLayout()
+        crow.addWidget(self.conflict_label)
+        crow.addWidget(self.conflict_combo, 1)
         ov.addWidget(self.out_same)
         ov.addWidget(self.out_custom)
         ov.addLayout(orow)
-        rv.addWidget(self.out_group)
-        rv.addStretch()
-        split.addWidget(right)
-        split.setSizes([420, 470])
+        ov.addLayout(crow)
+        col_b.addWidget(self.out_group)
+        col_a.addStretch()
+        col_b.addStretch()
+        scroll.setWidget(panel)
+        split.addWidget(scroll)
+        split.setSizes([410, 850])
 
-        # -- bottom: actions + progress + log
+        # ---- bottom
         action_row = QHBoxLayout()
         self.convert_btn = QPushButton()
         self.convert_btn.setObjectName("convertBtn")
@@ -422,126 +590,313 @@ class MainWindow(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setValue(0)
         self.status = QLabel()
-        self.status.setStyleSheet("color: #6b7280;")
         self.log = QListWidget()
         self.log.setObjectName("logList")
-        self.log.setMinimumHeight(70)
+        self.log.setMinimumHeight(90)
+        self.log.setToolTip(tr("tooltip_log"))
+        self.log.itemDoubleClicked.connect(self._show_log_detail)
         root.addWidget(self.progress)
         root.addWidget(self.status)
         root.addWidget(self.log, 1)
 
-    # ---------- i18n ----------
+        QShortcut(QKeySequence.Delete, self.file_list,
+                  activated=self._remove_selected)
+        QShortcut(QKeySequence("Ctrl+O"), self, activated=self._pick_files)
+        QShortcut(QKeySequence("Ctrl+Return"), self, activated=self._start)
+
+    # ---------------------------------------------------------------- i18n --
 
     @staticmethod
     def _detect_language() -> str:
         return "zh" if QLocale.system().name().lower().startswith("zh") else "en"
 
     def _on_language_changed(self, index: int):
-        code = self.lang_combo.itemData(index)
-        set_language(code)
-        self._settings.setValue("language", code)
+        set_language(self.lang_combo.itemData(index))
+        self._settings.setValue("language", current_language())
         self.retranslate()
 
     def retranslate(self):
         self.setWindowTitle(tr("window_title"))
         self.lang_label.setText(tr("language") + ":")
+        self.theme_btn.setText(tr("theme_dark") if self._theme == "light"
+                               else tr("theme_light"))
         self.log_file_btn.setText(tr("view_log"))
         self.about_btn.setText(tr("menu_about"))
-        self.list_label.setText(tr("list_header", n=self.file_list.count()))
+        self._refresh_list_label()
         self.add_btn.setText(tr("add_files"))
+        self.add_dir_btn.setText(tr("add_folder"))
+        self.remove_btn.setText(tr("remove"))
         self.clear_btn.setText(tr("clear"))
+        self.preset_group.setTitle(tr("group_preset"))
+        for i in range(self.preset_combo.count()):
+            code = self.preset_combo.itemData(i)
+            self.preset_combo.setItemText(i, tr("preset_" + code))
+        self.preset_combo.setToolTip(tr("preset_note"))
         self.format_group.setTitle(tr("group_format"))
         self.image_label.setText(tr("image_format"))
         self.video_label.setText(tr("video_format"))
-        for i in range(self.image_combo.count()):
-            code = self.image_combo.itemData(i)
-            self.image_combo.setItemText(i, tr(FMT_KEY.get(code, "fmt_" + code.lower())))
-        for i in range(self.video_combo.count()):
-            code = self.video_combo.itemData(i)
-            self.video_combo.setItemText(i, tr("vfmt_" + code.lower()))
+        self.audio_label.setText(tr("audio_format"))
+        for combo, prefix in ((self.image_combo, "image"),
+                              (self.video_combo, "video"),
+                              (self.audio_combo, "audio")):
+            for i in range(combo.count()):
+                code = combo.itemData(i)
+                key = (FMT_KEY.get(code, FMT_PREFIX[prefix] + code.lower())
+                       if prefix == "image"
+                       else FMT_PREFIX[prefix] + code.lower())
+                combo.setItemText(i, tr(key))
         self.video_note.setText(tr("video_note"))
         self.quality_label.setText(tr("quality"))
+        self.resize_check.setText(tr("resize_enable"))
+        self.resize_label.setText(tr("resize"))
         self.meta_group.setTitle(tr("group_metadata"))
         self.meta_check.setText(tr("keep_metadata"))
+        self.timestamps_check.setText(tr("keep_timestamps"))
+        self.date_check.setText(tr("organize_by_date"))
         self.meta_note.setText(tr("metadata_note"))
         self.perf_group.setTitle(tr("group_performance"))
         self.parallel_check.setText(tr("parallel_tip"))
         self.gpu_check.setText(tr("gpu_tip"))
-        if self._gpu_encoder:
-            self.gpu_note.setText(tr("gpu_found", name=self._gpu_encoder))
-        else:
-            self.gpu_note.setText(tr("gpu_none"))
+        self.gpu_note.setText(tr("gpu_found", name=self._gpu_encoder)
+                              if self._gpu_encoder else tr("gpu_none"))
         self.out_group.setTitle(tr("group_output"))
         self.out_same.setText(tr("out_same"))
         self.out_custom.setText(tr("out_custom"))
         self.out_browse.setText(tr("browse"))
+        self.conflict_label.setText(tr("conflict"))
+        for i in range(self.conflict_combo.count()):
+            code = self.conflict_combo.itemData(i)
+            self.conflict_combo.setItemText(i, tr("conflict_" + code))
         self.convert_btn.setText(tr("convert"))
         self.cancel_btn.setText(tr("cancel"))
         self.open_out_btn.setText(tr("open_output"))
         if self.progress.value() == 0:
             self.status.setText(tr("status_ready"))
 
-    # ---------- helpers ----------
+    # -------------------------------------------------------------- theme --
+
+    def _apply_theme(self):
+        app = QApplication.instance()
+        if app:
+            app.setStyleSheet(theme_qss(self._theme == "dark"))
+        self.theme_btn.setText(tr("theme_dark") if self._theme == "light"
+                               else tr("theme_light"))
+
+    def _toggle_theme(self):
+        self._theme = "dark" if self._theme == "light" else "light"
+        self._settings.setValue("theme", self._theme)
+        self._apply_theme()
+
+    # ----------------------------------------------------------- settings --
+
+    def _load_settings(self):
+        s = self._settings
+        def pick(combo, key, default):
+            val = s.value(key, default)
+            idx = combo.findData(val)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        pick(self.image_combo, "image_format", "JPEG")
+        pick(self.video_combo, "video_format", "MP4")
+        pick(self.audio_combo, "audio_format", "MP3")
+        pick(self.conflict_combo, "conflict", "rename")
+        pick(self.preset_combo, "preset", "custom")
+        self.quality_slider.setValue(int(s.value("quality", 95)))
+        self.resize_check.setChecked(s.value("resize_enabled", False, type=bool))
+        self.resize_spin.setValue(int(s.value("resize_px", 1920)))
+        self.resize_spin.setEnabled(self.resize_check.isChecked())
+        self.meta_check.setChecked(s.value("keep_metadata", True, type=bool))
+        self.timestamps_check.setChecked(s.value("keep_ts", True, type=bool))
+        self.date_check.setChecked(s.value("by_date", False, type=bool))
+        self.parallel_check.setChecked(s.value("parallel", True, type=bool))
+        if self._gpu_encoder:
+            self.gpu_check.setChecked(s.value("gpu", True, type=bool))
+        out_dir = s.value("output_dir", "")
+        if out_dir:
+            self.out_custom.setChecked(True)
+            self.out_path.setText(str(out_dir))
+        self._update_output_enabled()
+
+    def _save_settings(self):
+        s = self._settings
+        s.setValue("image_format", self.image_combo.currentData())
+        s.setValue("video_format", self.video_combo.currentData())
+        s.setValue("audio_format", self.audio_combo.currentData())
+        s.setValue("conflict", self.conflict_combo.currentData())
+        s.setValue("preset", self.preset_combo.currentData())
+        s.setValue("quality", self.quality_slider.value())
+        s.setValue("resize_enabled", self.resize_check.isChecked())
+        s.setValue("resize_px", self.resize_spin.value())
+        s.setValue("keep_metadata", self.meta_check.isChecked())
+        s.setValue("keep_ts", self.timestamps_check.isChecked())
+        s.setValue("by_date", self.date_check.isChecked())
+        s.setValue("parallel", self.parallel_check.isChecked())
+        s.setValue("gpu", self.gpu_check.isChecked())
+        s.setValue("output_dir", self.out_path.text() if self.out_custom.isChecked()
+                   else "")
+
+    def closeEvent(self, event):
+        self._save_settings()
+        super().closeEvent(event)
+
+    # -------------------------------------------------------------- queue --
+
+    def _refresh_list_label(self):
+        n = self.file_list.count()
+        self.list_label.setText(tr("list_header", n=n) if n
+                                else tr("list_empty"))
+
+    def add_paths(self, paths: list[str]):
+        existing = {self.file_list.item(i).text()
+                    for i in range(self.file_list.count())}
+        added = 0
+        for raw in paths:
+            p = Path(raw)
+            if p.is_dir():
+                for f in converter.scan_folder(p, recursive=True):
+                    if str(f) not in existing:
+                        existing.add(str(f))
+                        self.file_list.addItem(str(f))
+                        added += 1
+            elif p.suffix.lower() in DROP_EXTS and str(p) not in existing:
+                existing.add(str(p))
+                self.file_list.addItem(str(p))
+                added += 1
+        self._refresh_list_label()
+        if added:
+            self.status.setText(tr("status_added", n=added))
+
+    def _pick_files(self):
+        files, _ = QFileDialog.getOpenFileNames(
+            self, tr("dialog_title"), "", tr("dialog_filter"))
+        if files:
+            self.add_paths(files)
+
+    def _pick_folder(self):
+        d = QFileDialog.getExistingDirectory(self, tr("dialog_folder"))
+        if d:
+            self.add_paths([d])
+
+    def _remove_selected(self):
+        for item in self.file_list.selectedItems():
+            self.file_list.takeItem(self.file_list.row(item))
+        self._refresh_list_label()
+
+    def _clear(self):
+        self.file_list.clear()
+        self.log.clear()
+        self.progress.setValue(0)
+        self._refresh_list_label()
+        self.status.setText(tr("status_ready"))
+
+    def _show_file_info(self, item: QListWidgetItem):
+        from .cli import cmd_info
+        QApplication.clipboard()  # no-op; keeps import local & lazy
+        cmd_info([item.text()])
+
+    # ------------------------------------------------------------ options --
 
     def _selected_format(self) -> str:
         return self.image_combo.currentData() or "JPEG"
 
+    def _on_quality(self, value: int):
+        self.quality_value.setText(str(value))
+        self._mark_custom()
+
+    def _on_manual_change(self):
+        self._mark_custom()
+        self._update_quality_enabled()
+
+    def _mark_custom(self):
+        idx = self.preset_combo.findData("custom")
+        if idx >= 0 and self.preset_combo.currentIndex() != idx:
+            self.preset_combo.blockSignals(True)
+            self.preset_combo.setCurrentIndex(idx)
+            self.preset_combo.blockSignals(False)
+
+    def _apply_preset(self):
+        code = self.preset_combo.currentData()
+        if code == "custom":
+            self._save_settings()
+            return
+        img, vid, aud, quality, resize = PRESETS[code]
+        for combo, val in ((self.image_combo, img), (self.video_combo, vid),
+                           (self.audio_combo, aud)):
+            idx = combo.findData(val)
+            if idx >= 0:
+                combo.blockSignals(True)
+                combo.setCurrentIndex(idx)
+                combo.blockSignals(False)
+        self.quality_slider.blockSignals(True)
+        self.quality_slider.setValue(quality)
+        self.quality_slider.blockSignals(False)
+        self.quality_value.setText(str(quality))
+        self.resize_check.setChecked(resize > 0)
+        if resize > 0:
+            self.resize_spin.setValue(resize)
+        self._update_quality_enabled()
+        self._save_settings()
+
     def _update_quality_enabled(self):
-        fmt = self._selected_format()
-        self.quality_slider.setEnabled(fmt in ("JPEG", "WEBP", "AVIF"))
+        self.quality_slider.setEnabled(
+            self._selected_format() in ("JPEG", "WEBP", "AVIF"))
 
     def _update_output_enabled(self):
         custom = self.out_custom.isChecked()
         self.out_path.setEnabled(custom)
         self.out_browse.setEnabled(custom)
 
-    def add_files(self, paths: list[str]):
-        existing = {self.file_list.item(i).text()
-                    for i in range(self.file_list.count())}
-        for p in paths:
-            if p not in existing and Path(p).suffix.lower() in DROP_EXTS:
-                self.file_list.addItem(p)
-        self.list_label.setText(tr("list_header", n=self.file_list.count()))
-
-    def _pick_files(self):
-        files, _ = QFileDialog.getOpenFileNames(
-            self, tr("dialog_title"), "", tr("dialog_filter"))
-        if files:
-            self.add_files(files)
-
     def _browse_output(self):
         d = QFileDialog.getExistingDirectory(self, tr("browse"))
         if d:
             self.out_path.setText(d)
 
+    def _options(self) -> converter.ConvertOptions:
+        return converter.ConvertOptions(
+            image_format=self._selected_format(),
+            video_format=self.video_combo.currentData() or "MP4",
+            audio_format=self.audio_combo.currentData() or "MP3",
+            quality=self.quality_slider.value(),
+            keep_metadata=self.meta_check.isChecked(),
+            keep_timestamps=self.timestamps_check.isChecked(),
+            parallel=self.parallel_check.isChecked(),
+            use_gpu=self.gpu_check.isChecked(),
+            resize_long_edge=(self.resize_spin.value()
+                              if self.resize_check.isChecked() else 0),
+            conflict=self.conflict_combo.currentData() or "rename",
+            organize_by_date=self.date_check.isChecked(),
+        )
+
+    # ------------------------------------------------------------- convert --
+
     def _start(self):
         if self.file_list.count() == 0:
             QMessageBox.information(self, APP_NAME, tr("err_no_files"))
             return
-        if self.out_custom.isChecked() and self.out_path.text().strip():
-            default_dir = Path(self.out_path.text().strip())
-        else:
-            default_dir = None  # per-file: same directory as the source
+        opts = self._options()
+        self._save_settings()
+
+        if opts.organize_by_date and self.out_same.isChecked():
+            self.out_custom.setChecked(True)
+            if not self.out_path.text().strip():
+                first = Path(self.file_list.item(0).text())
+                self.out_path.setText(str(first.parent))
+        default_dir = (Path(self.out_path.text().strip())
+                       if self.out_custom.isChecked() and self.out_path.text().strip()
+                       else None)
 
         jobs = []
         for i in range(self.file_list.count()):
             src = Path(self.file_list.item(i).text())
             jobs.append((src, default_dir or src.parent))
 
-        opts = converter.ConvertOptions(
-            image_format=self._selected_format(),
-            video_format=self.video_combo.currentData() or "MP4",
-            quality=self.quality_slider.value(),
-            keep_metadata=self.meta_check.isChecked(),
-            parallel=self.parallel_check.isChecked(),
-            use_gpu=self.gpu_check.isChecked(),
-        )
-        if not converter.ffmpeg_available():
-            has_video = any(converter.detect_kind(s) == "video" for s, _ in jobs)
-            if has_video:
-                QMessageBox.warning(self, APP_NAME, tr("ffmpeg_missing"))
+        needs_ffmpeg = any(converter.detect_kind(s) in ("video", "audio")
+                           for s, _ in jobs)
+        if needs_ffmpeg and not converter.ffmpeg_available():
+            QMessageBox.warning(self, APP_NAME, tr("ffmpeg_missing"))
 
         self.log.clear()
+        self._errors.clear()
         self.progress.setRange(0, len(jobs))
         self.progress.setValue(0)
         self.convert_btn.setEnabled(False)
@@ -553,31 +908,50 @@ class MainWindow(QMainWindow):
         self._worker.all_done.connect(self._on_all_done)
         self._worker.start()
 
-    def _on_progress(self, i: int, total: int, name: str):
-        self.status.setText(tr("status_converting", i=i, n=total, name=name))
+    def _on_progress(self, done: int, total: int, name: str):
+        self.status.setText(tr("status_converting", i=done, n=total, name=name))
 
-    def _on_file_done(self, name: str, out: str, ok: bool, detail: str):
-        if ok:
-            self.log.addItem(tr("log_ok", name=name, out=out, detail=detail))
+    def _on_file_done(self, name: str, out: str, ok: bool, msg: str,
+                      in_b: int, out_b: int, skipped: bool):
+        if skipped:
+            self.log.addItem(f"⏭ {name} — {msg}")
+        elif ok:
+            delta = ""
+            if in_b and out_b:
+                delta = tr("size_delta",
+                           pct=abs((1 - out_b / in_b) * 100),
+                           arrow="↓" if out_b <= in_b else "↑")
+            self.log.addItem(tr("log_ok", name=name, out=msg, detail=delta))
             if out:
                 self._last_output = Path(out).parent
         else:
-            self.log.addItem(tr("log_fail", name=name, reason=detail))
+            self._errors[name] = msg
+            self.log.addItem(tr("log_fail", name=name, reason=msg))
         self.progress.setValue(self.progress.value() + 1)
 
-    def _on_all_done(self, ok: int, fail: int, cancelled: bool):
+    def _on_all_done(self, stats):
         self.convert_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
         self.file_list.setEnabled(True)
         self.open_out_btn.setEnabled(self._last_output is not None)
-        if cancelled:
+        processed = stats.ok + stats.fail + stats.skipped
+        if processed < self.file_list.count():
             self.status.setText(tr("status_cancelled"))
-        else:
-            self.status.setText(tr("status_done", ok=ok, fail=fail))
+            return
+        elapsed = stats.seconds
+        speed = (processed / elapsed) if elapsed > 0 else 0
+        self.status.setText(tr("status_done", ok=stats.ok, fail=stats.fail,
+                              skip=stats.skipped, secs=elapsed, speed=speed))
+        if stats.in_bytes and stats.out_bytes:
+            self.log.addItem(tr("log_summary",
+                                inb=converter_human(stats.in_bytes),
+                                outb=converter_human(stats.out_bytes),
+                                pct=abs(stats.savings_pct)))
 
     def _cancel(self):
         if self._worker:
             self._worker.cancel()
+            self.status.setText(tr("status_cancelling"))
 
     def _open_output(self):
         if self._last_output:
@@ -585,21 +959,34 @@ class MainWindow(QMainWindow):
 
     def _open_log(self):
         lf = converter.log_file()
-        if lf.exists():
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(lf)))
-        else:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(lf.parent)))
+        QDesktopServices.openUrl(
+            QUrl.fromLocalFile(str(lf if lf.exists() else lf.parent)))
+
+    def _show_log_detail(self, item: QListWidgetItem):
+        text = item.text()
+        for name, msg in self._errors.items():
+            if name in text:
+                body = (f"{name}\n\n{msg}\n\n"
+                        f"{tr('log_detail_hint')}\n{converter.log_file()}")
+                ErrorDialog(self, tr("error_detail"), body).exec()
+                return
 
     def _show_about(self):
-        QMessageBox.about(
-            self, tr("menu_about"),
-            tr("about_text", version=__version__, repo=APP_REPO))
+        QMessageBox.about(self, tr("menu_about"),
+                          tr("about_text", version=__version__, repo=APP_REPO))
+
+
+def converter_human(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} B"
+        n /= 1024
+    return f"{n:.1f} GB"
 
 
 def run_app(argv: list[str] | None = None) -> int:
     app = QApplication(argv or [])
     app.setStyle("Fusion")
-    app.setStyleSheet(QSS)
     window = MainWindow()
     window.show()
     return app.exec()

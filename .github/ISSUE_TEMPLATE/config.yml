@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or usage help
+    url: https://github.com/Kelvin-LH/MediaTrans/discussions
+    about: Ask how to convert something, or share your workflow
+  - name: Security report
+    url: https://github.com/Kelvin-LH/MediaTrans/security/advisories/new
+    about: Report a vulnerability privately (please do not open a public issue)
+  - name: Documentation
+    url: https://github.com/Kelvin-LH/MediaTrans#readme
+    about: Supported formats, CLI usage and FAQ

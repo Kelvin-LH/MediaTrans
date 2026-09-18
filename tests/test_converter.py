@@ -6,15 +6,17 @@ MediaTrans engine, and verifies the metadata survived in every output.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from PIL import Image
-from PIL.ExifTags import Base, GPS, IFD
+from PIL.ExifTags import GPS, IFD, Base
 
 from app import converter
 
@@ -222,6 +224,123 @@ def test_parallel_and_gpu(tmp: Path):
         check("ProRes→MP4: playable h264 output", "Video: h264" in err, err[:200])
 
 
+def test_new_features(tmp: Path):
+    print("== resize / conflicts / timestamps / by-date / audio ==")
+    src = tmp / "IMG_0001.heic"
+    make_test_heic(src)
+
+    # -- resize caps the long edge and keeps aspect ratio
+    res = converter.convert_image(src, tmp / "rz",
+                                  converter.ConvertOptions(image_format="PNG",
+                                                           resize_long_edge=100))
+    check("resize: converted", res.ok, res.message)
+    if res.ok:
+        with Image.open(res.output) as im:
+            check("resize: long edge capped at 100", max(im.size) == 100, str(im.size))
+            check("resize: aspect ratio kept (320x240 -> 100x75)",
+                  im.size == (100, 75), str(im.size))
+
+    # -- small resize target does not upscale
+    res = converter.convert_image(src, tmp / "rz2",
+                                  converter.ConvertOptions(image_format="PNG",
+                                                           resize_long_edge=4000))
+    if res.ok:
+        with Image.open(res.output) as im:
+            check("resize: no upscaling", im.size == (320, 240), str(im.size))
+
+    # -- conflict: rename keeps both, skip leaves the original, overwrite replaces
+    opts_rename = converter.ConvertOptions(image_format="JPEG", conflict="rename")
+    first = converter.convert_image(src, tmp / "cf", opts_rename)
+    second = converter.convert_image(src, tmp / "cf", opts_rename)
+    check("conflict rename: two distinct outputs",
+          first.ok and second.ok and first.output != second.output,
+          f"{first.output} vs {second.output}")
+    check("conflict rename: suffix added", second.output.stem.endswith("_1"),
+          second.output.name)
+
+    opts_skip = converter.ConvertOptions(image_format="JPEG", conflict="skip")
+    skipped = converter.convert_image(src, tmp / "cf", opts_skip)
+    check("conflict skip: reported as skipped",
+          skipped.ok and skipped.skipped, str(skipped))
+
+    opts_ovr = converter.ConvertOptions(image_format="JPEG", conflict="overwrite")
+    time.sleep(0.01)
+    over = converter.convert_image(src, tmp / "cf", opts_ovr)
+    check("conflict overwrite: same path reused",
+          over.ok and over.output == tmp / "cf" / "IMG_0001.jpg", str(over.output))
+
+    # -- same-format conversion in the source folder must never clobber the source
+    jpg_in = tmp / "same"
+    jpg_in.mkdir()
+    orig = jpg_in / "photo.jpg"
+    with Image.open(src) as im:
+        im.convert("RGB").save(orig, "JPEG", quality=90)
+    orig_bytes = orig.read_bytes()
+    res = converter.convert_image(orig, jpg_in,
+                                  converter.ConvertOptions(image_format="JPEG",
+                                                           conflict="overwrite"))
+    check("safety: JPG->JPG in place keeps the source intact",
+          res.ok and orig.read_bytes() == orig_bytes, res.message)
+    check("safety: output went to a suffixed name",
+          res.output is not None and res.output != orig, str(res.output))
+
+    # -- timestamps copied by default, skipped on request
+    old = 1_500_000_000
+    os.utime(src, (old, old))
+    with_ts = converter.convert_image(src, tmp / "ts",
+                                      converter.ConvertOptions(image_format="PNG"))
+    without_ts = converter.convert_image(src, tmp / "ts2",
+                                         converter.ConvertOptions(image_format="PNG",
+                                                                  keep_timestamps=False))
+    if with_ts.ok and without_ts.ok:
+        check("timestamps: preserved by default",
+              abs(with_ts.output.stat().st_mtime - old) < 2,
+              str(with_ts.output.stat().st_mtime))
+        check("timestamps: not preserved when disabled",
+              abs(without_ts.output.stat().st_mtime - old) > 2)
+
+    # -- organize by capture date (EXIF says 2026-09-13)
+    dated = converter.convert_image(src, tmp / "dt",
+                                    converter.ConvertOptions(image_format="JPEG",
+                                                             organize_by_date=True))
+    check("by-date: sorted into YYYY/MM",
+          dated.ok and dated.output.parent.parts[-2:] == ("2026", "09"),
+          str(dated.output))
+
+    # -- audio: video -> audio extraction and audio -> audio transcoding
+    mov = tmp / "VID_0001.mov"
+    make_test_mov(mov)
+    mp3 = converter.convert_video(mov, tmp / "au",
+                                  converter.ConvertOptions(video_format="MP3"))
+    check("video -> MP3 extraction", mp3.ok, mp3.message)
+    if mp3.ok:
+        flac = converter.convert_audio(mp3.output, tmp / "au",
+                                       converter.ConvertOptions(audio_format="FLAC"))
+        check("audio MP3 -> FLAC", flac.ok, flac.message)
+        if flac.ok:
+            m4a = converter.convert_audio(flac.output, tmp / "au",
+                                          converter.ConvertOptions(audio_format="M4A"))
+            check("audio FLAC -> M4A", m4a.ok, m4a.message)
+
+    # -- batch stats
+    stats = converter.convert_many(
+        [src, mov], tmp / "batch",
+        converter.ConvertOptions(image_format="JPEG", video_format="MP4"))
+    check("convert_many: converted both", stats.ok == 2 and stats.fail == 0,
+          f"ok={stats.ok} fail={stats.fail}")
+    check("convert_many: byte totals tracked",
+          stats.in_bytes > 0 and stats.out_bytes > 0, str(stats.in_bytes))
+    check("convert_many: elapsed tracked", stats.seconds >= 0)
+
+    # -- folder scan finds every supported type
+    found = converter.scan_folder(tmp, recursive=True)
+    check("scan_folder: found image/video/audio files",
+          any(f.suffix.lower() == ".heic" for f in found)
+          and any(f.suffix.lower() == ".mov" for f in found)
+          and any(f.suffix.lower() == ".mp3" for f in found),
+          str(len(found)))
+
+
 def test_strip_metadata(tmp: Path):
     print("== metadata stripping ==")
     src = tmp / "IMG_0001.heic"
@@ -239,6 +358,7 @@ def main():
         test_images(tmp)
         test_video(tmp)
         test_parallel_and_gpu(tmp)
+        test_new_features(tmp)
         test_strip_metadata(tmp)
     print(f"\n{PASS} passed, {FAIL} failed, {SKIP} skipped")
     sys.exit(1 if FAIL else 0)

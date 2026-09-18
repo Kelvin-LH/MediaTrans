@@ -1,0 +1,48 @@
+name: Feature request
+description: Suggest a format, an option or a workflow improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the workflow that is awkward or impossible today.
+      placeholder: "I import photos into a library that needs 300dpi TIFFs, so I have to…"
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like MediaTrans to do?
+      placeholder: "An option to set the output DPI for TIFF/JPEG exports."
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app?
+      options:
+        - Image conversion
+        - Video conversion
+        - Audio conversion
+        - Metadata handling
+        - Desktop UI
+        - Command line interface
+        - Packaging / installation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Other tools or workarounds you tried.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and the roadmap in the README
+          required: true
